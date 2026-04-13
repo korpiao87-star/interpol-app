@@ -58,6 +58,7 @@ c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password
 c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, affiliation TEXT, name TEXT, 
               contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
+# DB 스키마 충돌 방지를 위해 테이블 구조(열 5개)는 그대로 유지합니다.
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
 conn.commit()
@@ -86,11 +87,9 @@ elif choice == "로그인":
     st.markdown("<div style='text-align: center; margin-bottom: 20px;'><h2 style='color: #002D56; font-weight: 900;'>🔒 인터폴팀<br>업무 지원 시스템</h2></div>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
-        # 🌟 [수정된 부분] st.form을 사용하여 엔터키 로그인을 지원합니다.
         with st.form("login_form"):
             user_id = st.text_input("아이디")
             user_pw = st.text_input("비밀번호", type='password')
-            # 폼 내부의 제출 버튼은 엔터키를 누르면 자동으로 실행됩니다.
             submit_btn = st.form_submit_button("로그인", use_container_width=True)
             
             if submit_btn:
@@ -131,7 +130,9 @@ elif choice == "🌍 국가별 공조 특징":
         sel = st.selectbox("국가 선택", countries)
         c.execute("SELECT * FROM country_info WHERE country_name=?", (sel,))
         info = c.fetchone()
-        for title, content in [("📌 특징", info[1]), ("📜 조약", info[2]), ("📞 연락처", info[3]), ("💡 팁", info[4])]:
+        
+        # 🌟 '조약' 관련 항목 표출 부분 삭제
+        for title, content in [("📌 특징", info[1]), ("📞 연락처", info[3]), ("💡 팁", info[4])]:
             st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
 elif choice == "📁 공조 자료실":
@@ -159,21 +160,11 @@ elif choice == "⚙️ 데이터 관리":
         if all_data:
             df_download = pd.DataFrame(all_data, columns=['국가', '소속', '성명', '연락처', '구분', '관리목적', '직책', '관리주체'])
             df_download.insert(0, '연번', range(1, len(df_download) + 1))
-            
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_download.to_excel(writer, index=False, sheet_name='연락망')
             processed_data = output.getvalue()
-
-            st.download_button(
-                label="📥 현재 명단 엑셀 다운로드 (.xlsx)",
-                data=processed_data,
-                file_name=f"인터폴팀_연락망_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        else:
-            st.info("다운로드할 데이터가 없습니다.")
+            st.download_button(label="📥 현재 명단 엑셀 다운로드 (.xlsx)", data=processed_data, file_name=f"인터폴팀_연락망_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
         st.divider()
         st.subheader("📤 엑셀 일괄 업로드")
@@ -182,8 +173,7 @@ elif choice == "⚙️ 데이터 관리":
             df_excel = pd.read_excel(uploaded_file).fillna("")
             c.execute('DELETE FROM org_chart_v2')
             for _, row in df_excel.iterrows():
-                c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)',
-                          (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
+                c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
             conn.commit(); st.success("반영 완료!"); st.rerun()
 
         st.divider()
@@ -197,11 +187,47 @@ elif choice == "⚙️ 데이터 관리":
                 conn.commit(); st.rerun()
 
     with tab2:
-        with st.form("country"):
-            cn, cf, ct, cc, cp = st.text_input("국가명"), st.text_area("특징"), st.text_input("조약"), st.text_area("연락처"), st.text_area("팁")
-            if st.form_submit_button("저장"):
-                c.execute('INSERT OR REPLACE INTO country_info VALUES (?,?,?,?,?)', (cn, cf, ct, cc, cp))
-                conn.commit(); st.rerun()
+        st.subheader("🌍 국가정보 등록 및 수정")
+        
+        c.execute("SELECT country_name FROM country_info ORDER BY country_name ASC")
+        existing_countries = [r[0] for r in c.fetchall()]
+        
+        edit_choice = st.selectbox("수정할 국가 선택 (새로 추가하려면 '--- 신규 추가 ---' 선택)", ["--- 신규 추가 ---"] + existing_countries)
+        
+        default_name = ""
+        default_feat = ""
+        default_cont = ""
+        default_tips = ""
+        hidden_treaty = "" # 기존 조약 데이터 보존용 (테이블 구조 유지 목적)
+        
+        if edit_choice != "--- 신규 추가 ---":
+            c.execute("SELECT * FROM country_info WHERE country_name = ?", (edit_choice,))
+            target_data = c.fetchone()
+            if target_data:
+                default_name = target_data[0]
+                default_feat = target_data[1]
+                hidden_treaty = target_data[2] # 화면에는 안 보이지만 DB 유지를 위해 담아둠
+                default_cont = target_data[3]
+                default_tips = target_data[4]
+
+        with st.form("country_form"):
+            cn = st.text_input("국가명", value=default_name)
+            cf = st.text_area("핵심 공조 특징", value=default_feat)
+            # 🌟 조약 입력창 삭제
+            cc = st.text_area("주요 연락 창구", value=default_cont)
+            cp = st.text_area("실무 업무 팁 및 주의사항", value=default_tips)
+            
+            submit_label = "정보 수정 저장" if edit_choice != "--- 신규 추가 ---" else "신규 정보 저장"
+            
+            if st.form_submit_button(submit_label):
+                if cn.strip() == "":
+                    st.error("국가명을 입력해주세요.")
+                else:
+                    # 🌟 5개 열을 맞추기 위해 hidden_treaty 값을 함께 넘겨줍니다
+                    c.execute('INSERT OR REPLACE INTO country_info VALUES (?,?,?,?,?)', (cn, cf, hidden_treaty, cc, cp))
+                    conn.commit()
+                    st.success(f"{cn} 정보가 저장되었습니다.")
+                    st.rerun()
 
     with tab3:
         c.execute('SELECT username, name, department, status FROM users WHERE username != "admin"')
