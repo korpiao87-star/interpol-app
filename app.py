@@ -133,7 +133,7 @@ if choice == "로그아웃":
 elif choice == "로그인":
     st.markdown("""
     <div style="text-align: center; margin-bottom: 20px;">
-        <h2 style='color: #002D56; margin-top: 0; text-shadow: 2px 2px 4px rgba(255,255,255,0.8); font-weight: 900;'>🔒 인터폴팀 업무 지원 시스템</h2>
+        <h2 style='color: #002D56; margin-top: 0; text-shadow: 2px 2px 4px rgba(255,255,255,0.8); font-weight: 900;'>인터폴팀 업무 지원 시스템</h2>
         <p style='color: #333; font-weight: bold;'>허가된 인원만 접근 가능합니다.</p>
     </div>
     """, unsafe_allow_html=True)
