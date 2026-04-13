@@ -131,9 +131,10 @@ if choice == "로그아웃":
     st.rerun()
 
 elif choice == "로그인":
+    # 🌟 [수정된 부분] <br> 태그를 사용하여 강제로 줄바꿈을 해주었습니다.
     st.markdown("""
     <div style="text-align: center; margin-bottom: 20px;">
-        <h2 style='color: #002D56; margin-top: 0; text-shadow: 2px 2px 4px rgba(255,255,255,0.8); font-weight: 900;'>인터폴팀 업무 지원 시스템</h2>
+        <h2 style='color: #002D56; margin-top: 0; text-shadow: 2px 2px 4px rgba(255,255,255,0.8); font-weight: 900;'>🔒 인터폴팀<br>업무 지원 시스템</h2>
         <p style='color: #333; font-weight: bold;'>허가된 인원만 접근 가능합니다.</p>
     </div>
     """, unsafe_allow_html=True)
@@ -272,10 +273,8 @@ elif choice == "⚙️ 데이터 관리":
         
     st.markdown('<div class="glass-box"><h2 style="margin:0;">⚙️ 시스템 관리</h2></div>', unsafe_allow_html=True)
     
-    # 🌟 복구 완료: 3개의 탭 구성
     tab1, tab2, tab3 = st.tabs(["👤 조직도 관리", "🌍 국가정보 관리", "👥 사용자 계정 관리"])
     
-    # [복구] 1. 조직도 관리 (신규 등록 + 기존 정보 수정/삭제)
     with tab1:
         st.subheader("신규 팀원 등록")
         with st.form("org_new"):
@@ -311,7 +310,6 @@ elif choice == "⚙️ 데이터 관리":
                         st.warning("삭제되었습니다.")
                         st.rerun()
 
-    # [복구] 2. 국가 정보 관리 (신규 등록 + 기존 정보 상세 수정/삭제)
     with tab2:
         st.subheader("국가 정보 등록 및 스마트 업데이트")
         st.info("국가명을 입력하고 정보를 넣으면 자동으로 등록되거나 기존 정보가 덮어씌워집니다.")
@@ -356,7 +354,6 @@ elif choice == "⚙️ 데이터 관리":
                             st.warning(f"{cname} 정보가 완전히 삭제되었습니다.")
                             st.rerun()
 
-    # [유지] 3. 전체 사용자 통합 관리
     with tab3:
         st.subheader("👥 시스템 이용자 통합 관리")
         c.execute('SELECT username, name, department, status FROM users WHERE username != "admin"')
