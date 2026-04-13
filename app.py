@@ -4,20 +4,28 @@ import pandas as pd
 import os
 import base64
 from datetime import datetime
+from pathlib import Path
 
-# --- 0. 기본 화면 설정 ---
+# --- 0. 경로 설정 (핸드폰 접속 에러 방지) ---
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+DB_PATH = BASE_DIR / "users.db"
+IMAGE_PATH = BASE_DIR / "blue_tiger.png"
+
+if not UPLOAD_DIR.exists():
+    os.makedirs(UPLOAD_DIR)
+
+# --- 1. 기본 화면 설정 ---
 st.set_page_config(page_title="서울경찰청 인터폴팀", page_icon="🕵️", layout="centered")
 
-# --- 1. 배경 이미지 설정 (투명도 0.4) ---
+# --- 2. 배경 이미지 설정 (투명도 0.4) ---
 def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
     return base64.b64encode(data).decode()
 
-image_path = 'blue_tiger.png'
-
-if os.path.exists(image_path):
-    img_base64 = get_base64_of_bin_file(image_path)
+if IMAGE_PATH.exists():
+    img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
     st.markdown(
         f"""
         <style>
@@ -35,7 +43,7 @@ if os.path.exists(image_path):
 else:
     st.warning("배경 이미지(blue_tiger.png)를 찾을 수 없습니다.")
 
-# --- 2. 앱 전체 디자인(CSS) ---
+# --- 3. 앱 디자인(CSS) 및 반투명 텍스트 상자 ---
 st.markdown("""
 <style>
     [data-testid="stSidebar"] {
@@ -89,27 +97,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 데이터베이스 및 폴더 초기화 ---
-conn = sqlite3.connect('users.db', check_same_thread=False)
+# --- 4. 데이터베이스 초기화 ---
+conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
 c = conn.cursor()
 
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, name TEXT, department TEXT, status TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS org_chart (id INTEGER PRIMARY KEY AUTOINCREMENT, dept TEXT, name TEXT, contact TEXT, task TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
-
-if not os.path.exists("uploads"):
-    os.makedirs("uploads")
 conn.commit()
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["user_id"] = ""
 
-# --- 4. 사이드바 메뉴 (관리자 권한 분리) ---
+# --- 5. 사이드바 메뉴 (관리자 권한 분리) ---
 menu = ["로그인", "회원가입"]
 if st.session_state["logged_in"]:
-    # 🌟 [핵심 수정] admin 계정이면 모든 메뉴를 보여주고, 일반 계정이면 데이터 관리를 숨깁니다.
     if st.session_state.get("user_id") == "admin":
         menu = ["📊 대시보드 및 조직도", "🌍 국가별 공조 특징", "📁 공조 자료실", "⚙️ 데이터 관리", "로그아웃"]
     else:
@@ -119,7 +123,7 @@ st.sidebar.title("🕵️ 서울청 인터폴팀")
 st.sidebar.markdown("---")
 choice = st.sidebar.selectbox("메뉴 선택", menu)
 
-# --- 5. 기능별 화면 구현 ---
+# --- 6. 기능별 화면 구현 ---
 
 if choice == "로그아웃":
     st.session_state["logged_in"] = False
@@ -165,7 +169,7 @@ elif choice == "회원가입":
             try:
                 c.execute('INSERT INTO users VALUES (?,?,?,?,?)', (new_id, new_pw, new_name, "인터폴", "pending"))
                 conn.commit()
-                st.success("신청 완료!")
+                st.success("신청 완료! 관리자 승인을 기다려주세요.")
             except:
                 st.error("이미 존재하는 아이디입니다.")
 
@@ -179,7 +183,7 @@ elif choice == "📊 대시보드 및 조직도":
     
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f'<div class="glass-box" style="text-align:center;"><h4>👥 등록된 인적 네트워크</h4><h2 style="margin:0;">{total_staff} 명</h2></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="glass-box" style="text-align:center;"><h4>👥 등록된 팀원</h4><h2 style="margin:0;">{total_staff} 명</h2></div>', unsafe_allow_html=True)
     with col2:
         st.markdown(f'<div class="glass-box" style="text-align:center;"><h4>📁 공조 자료실 파일</h4><h2 style="margin:0;">{total_files} 건</h2></div>', unsafe_allow_html=True)
 
@@ -219,27 +223,31 @@ elif choice == "📁 공조 자료실":
             type=['hwp', 'hwpx', 'pdf', 'docx', 'doc', 'xlsx', 'jpg', 'jpeg', 'png']
         )
         if st.button("서버에 저장", use_container_width=True) and up_file:
-            path = os.path.join("uploads", up_file.name)
-            with open(path, "wb") as f:
+            save_path = UPLOAD_DIR / up_file.name
+            with open(save_path, "wb") as f:
                 f.write(up_file.getbuffer())
+                
             c.execute("INSERT INTO file_archive (filename, filepath, upload_date) VALUES (?,?,?)",
-                      (up_file.name, path, datetime.now().strftime("%Y-%m-%d %H:%M")))
+                      (up_file.name, up_file.name, datetime.now().strftime("%Y-%m-%d %H:%M")))
             conn.commit()
             st.success(f"'{up_file.name}' 업로드 성공!")
             st.rerun()
 
     f_search = st.text_input("파일명 검색", placeholder="검색어를 입력하세요")
-    f_query = "SELECT id, filename, filepath, upload_date FROM file_archive"
-    if f_search:
-        f_query += f" WHERE filename LIKE '%{f_search}%'"
-    
-    c.execute(f_query)
+    c.execute("SELECT id, filename, filepath, upload_date FROM file_archive")
     files = c.fetchall()
+    
+    if f_search:
+        files = [f for f in files if f_search.lower() in f[1].lower()]
     
     if not files:
         st.markdown('<div class="glass-box">등록된 자료가 없습니다.</div>', unsafe_allow_html=True)
     else:
-        for f_id, f_name, f_path, f_date in files:
+        for f_id, f_name, f_rel_path, f_date in files:
+            full_path = UPLOAD_DIR / f_name
+            if not full_path.exists():
+                continue
+
             st.markdown(f"""
             <div class="glass-box" style="margin-bottom: 10px; padding: 15px;">
                 <h5 style="margin:0; color:#002D56;">{f_name}</h5>
@@ -248,23 +256,26 @@ elif choice == "📁 공조 자료실":
             """, unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
-            with open(f_path, "rb") as f:
+            with open(full_path, "rb") as f:
                 col1.download_button("⬇️ 다운로드", f, file_name=f_name, key=f"dl_{f_id}", use_container_width=True)
             if col2.button("🗑️ 파일 삭제", key=f"del_{f_id}", use_container_width=True):
-                if os.path.exists(f_path): os.remove(f_path)
+                if full_path.exists():
+                    os.remove(full_path)
                 c.execute("DELETE FROM file_archive WHERE id=?", (f_id,))
                 conn.commit()
                 st.rerun()
 
 elif choice == "⚙️ 데이터 관리":
-    # 🌟 [이중 보안] 만약 비정상적인 방법으로 접근하더라도 차단되도록 방어막 설정
     if st.session_state.get("user_id") != "admin":
         st.error("🚫 최고 관리자 전용 메뉴입니다. 접근 권한이 없습니다.")
         st.stop()
         
     st.markdown('<div class="glass-box"><h2 style="margin:0;">⚙️ 시스템 관리</h2></div>', unsafe_allow_html=True)
-    tab1, tab2, tab3 = st.tabs(["👤 조직도 관리", "🌍 국가정보 관리", "✅ 승인대기"])
     
+    # 🌟 복구 완료: 3개의 탭 구성
+    tab1, tab2, tab3 = st.tabs(["👤 조직도 관리", "🌍 국가정보 관리", "👥 사용자 계정 관리"])
+    
+    # [복구] 1. 조직도 관리 (신규 등록 + 기존 정보 수정/삭제)
     with tab1:
         st.subheader("신규 팀원 등록")
         with st.form("org_new"):
@@ -300,9 +311,10 @@ elif choice == "⚙️ 데이터 관리":
                         st.warning("삭제되었습니다.")
                         st.rerun()
 
+    # [복구] 2. 국가 정보 관리 (신규 등록 + 기존 정보 상세 수정/삭제)
     with tab2:
-        st.subheader("국가 정보 등록 및 수정")
-        st.info("국가명을 입력하고 정보를 넣으면 자동으로 등록되거나 기존 정보가 수정됩니다.")
+        st.subheader("국가 정보 등록 및 스마트 업데이트")
+        st.info("국가명을 입력하고 정보를 넣으면 자동으로 등록되거나 기존 정보가 덮어씌워집니다.")
         with st.form("country_manage"):
             cn = st.text_input("국가명 (예: 중국, 베트남)")
             cf = st.text_area("핵심 공조 특징")
@@ -316,7 +328,7 @@ elif choice == "⚙️ 데이터 관리":
                 st.rerun()
         
         st.divider()
-        st.subheader("기존 국가 정보 관리 (수정/삭제)")
+        st.subheader("기존 국가 정보 개별 관리 (수정/삭제)")
         c.execute("SELECT country_name, features, treaty, contacts, tips FROM country_info")
         country_data = c.fetchall()
         
@@ -344,14 +356,41 @@ elif choice == "⚙️ 데이터 관리":
                             st.warning(f"{cname} 정보가 완전히 삭제되었습니다.")
                             st.rerun()
 
+    # [유지] 3. 전체 사용자 통합 관리
     with tab3:
-        c.execute('SELECT username, name FROM users WHERE status="pending"')
-        users = c.fetchall()
-        if not users: st.info("대기 중인 계정이 없습니다.")
-        for u in users:
-            st.markdown(f'<div class="glass-box" style="padding:15px; margin-bottom:10px;"><b>{u[1]}</b> ({u[0]})</div>', unsafe_allow_html=True)
-            if st.button("승인하기", key=f"app_{u[0]}", use_container_width=True):
-                c.execute('UPDATE users SET status="approved" WHERE username=?', (u[0],))
-                conn.commit()
-                st.rerun()
-                
+        st.subheader("👥 시스템 이용자 통합 관리")
+        c.execute('SELECT username, name, department, status FROM users WHERE username != "admin"')
+        all_users = c.fetchall()
+        
+        if not all_users:
+            st.info("등록된 사용자가 없습니다.")
+        else:
+            for u_id, u_name, u_dept, u_status in all_users:
+                status_icon = "✅" if u_status == "approved" else "⏳"
+                with st.expander(f"{status_icon} {u_name} ({u_id}) - 상태: {u_status}"):
+                    st.write(f"**아이디:** {u_id} | **부서:** {u_dept}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    if u_status == "pending":
+                        if col1.button("✅ 가입 승인", key=f"app_{u_id}", use_container_width=True):
+                            c.execute('UPDATE users SET status="approved" WHERE username=?', (u_id,))
+                            conn.commit()
+                            st.rerun()
+                    else:
+                        if col1.button("🚫 권한 회수", key=f"rev_{u_id}", use_container_width=True):
+                            c.execute('UPDATE users SET status="pending" WHERE username=?', (u_id,))
+                            conn.commit()
+                            st.rerun()
+                    
+                    if col2.button("🔑 비번 초기화", key=f"rst_{u_id}", use_container_width=True):
+                        c.execute('UPDATE users SET password="password123!" WHERE username=?', (u_id,))
+                        conn.commit()
+                        st.warning(f"'{u_id}' 초기 비밀번호가 'password123!'로 변경되었습니다.")
+                    
+                    if col3.button("❌ 강제 탈퇴", key=f"del_{u_id}", use_container_width=True):
+                        c.execute('DELETE FROM users WHERE username=?', (u_id,))
+                        conn.commit()
+                        st.error(f"'{u_id}' 계정이 삭제되었습니다.")
+                        st.rerun()
+                        
