@@ -58,7 +58,6 @@ c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password
 c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, affiliation TEXT, name TEXT, 
               contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
-# DB 스키마 충돌 방지를 위해 테이블 구조(열 5개)는 그대로 유지합니다.
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
 conn.commit()
@@ -75,7 +74,6 @@ if st.session_state["logged_in"]:
     else:
         menu = ["📊 연락망 및 대시보드", "🌍 국가별 공조 특징", "📁 공조 자료실", "로그아웃"]
 
-# 🌟 [수정된 부분] 버튼 클릭 시 메뉴 이동을 연동하기 위해 세션 상태(nav_menu)를 관리합니다.
 if "nav_menu" not in st.session_state or st.session_state.nav_menu not in menu:
     st.session_state.nav_menu = menu[0]
 
@@ -108,24 +106,33 @@ elif choice == "로그인":
                         st.rerun()
                     else: 
                         st.error("승인 대기 중이거나 정보가 틀립니다.")
-        
-        # 🌟 [추가된 부분] 폼 바로 아래에 중앙 정렬된 작은 '회원가입' 버튼 추가
+
+        def go_to_signup():
+            st.session_state.nav_menu = "회원가입"
+
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
-        _, btn_col, _ = st.columns([1, 1.2, 1]) # 버튼 크기를 작게 만들기 위해 좌우 여백 확보
+        _, btn_col, _ = st.columns([1, 1.2, 1])
         with btn_col:
-            if st.button("회원가입", use_container_width=True):
-                st.session_state.nav_menu = "회원가입" # 사이드바 메뉴를 '회원가입'으로 자동 변경
-                st.rerun()
+            st.button("회원가입", on_click=go_to_signup, use_container_width=True)
 
 elif choice == "회원가입":
     st.markdown('<div class="glass-box"><h2 style="margin:0;">📝 계정 신청</h2></div>', unsafe_allow_html=True)
     with st.form("signup"):
-        new_id, new_name, new_pw = st.text_input("아이디"), st.text_input("성명"), st.text_input("비밀번호", type='password')
+        new_id = st.text_input("아이디")
+        new_name = st.text_input("성명")
+        new_pw = st.text_input("비밀번호", type='password')
+        new_pw_confirm = st.text_input("비밀번호 재확인", type='password')
+        
         if st.form_submit_button("신청하기", use_container_width=True):
-            try:
-                c.execute('INSERT INTO users VALUES (?,?,?,?,?)', (new_id, new_pw, new_name, "인터폴", "pending"))
-                conn.commit(); st.success("신청 완료!")
-            except: st.error("이미 존재하는 아이디입니다.")
+            if new_pw != new_pw_confirm:
+                st.error("비밀번호가 일치하지 않습니다. 다시 확인해주세요.")
+            else:
+                try:
+                    c.execute('INSERT INTO users VALUES (?,?,?,?,?)', (new_id, new_pw, new_name, "인터폴", "pending"))
+                    conn.commit()
+                    st.success("신청 완료! 관리자 승인을 기다려주세요.")
+                except: 
+                    st.error("이미 존재하는 아이디입니다.")
 
 elif choice == "📊 연락망 및 대시보드":
     st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {st.session_state["user_name"]} 수사관님!</h2></div>', unsafe_allow_html=True)
@@ -142,7 +149,6 @@ elif choice == "🌍 국가별 공조 특징":
         sel = st.selectbox("국가 선택", countries)
         c.execute("SELECT * FROM country_info WHERE country_name=?", (sel,))
         info = c.fetchone()
-        
         for title, content in [("📌 특징", info[1]), ("📞 연락처", info[3]), ("💡 팁", info[4])]:
             st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
@@ -178,14 +184,30 @@ elif choice == "⚙️ 데이터 관리":
             st.download_button(label="📥 현재 명단 엑셀 다운로드 (.xlsx)", data=processed_data, file_name=f"인터폴팀_연락망_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
         st.divider()
+        # 🌟 [수정된 부분] 엑셀 업로드 시 옵션(덮어쓰기 vs 추가하기) 선택 기능 도입
         st.subheader("📤 엑셀 일괄 업로드")
+        
+        upload_option = st.radio(
+            "업로드 방식을 선택하세요:",
+            ["🚨 전체 덮어쓰기 (위험: 기존 개별 입력 데이터 모두 삭제됨)", "➕ 기존 데이터 아래에 추가하기 (기존 데이터 유지)"]
+        )
+        
         uploaded_file = st.file_uploader("엑셀 파일 선택", type=['xlsx'])
-        if uploaded_file and st.button("🚨 전체 덮어쓰기"):
+        
+        if uploaded_file and st.button("파일 적용하기", use_container_width=True):
             df_excel = pd.read_excel(uploaded_file).fillna("")
-            c.execute('DELETE FROM org_chart_v2')
+            
+            # '덮어쓰기'를 선택했을 때만 기존 데이터를 날립니다.
+            if "덮어쓰기" in upload_option:
+                c.execute('DELETE FROM org_chart_v2')
+                
+            # 엑셀 데이터 삽입
             for _, row in df_excel.iterrows():
-                c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
-            conn.commit(); st.success("반영 완료!"); st.rerun()
+                c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', 
+                          (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
+            conn.commit()
+            st.success("데이터베이스 반영이 완료되었습니다!")
+            st.rerun()
 
         st.divider()
         st.subheader("✍️ 개별 관리")
@@ -249,3 +271,4 @@ elif choice == "⚙️ 데이터 관리":
                     if col1.button("회수", key=f"r_{u_id}"): c.execute('UPDATE users SET status="pending" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
                 if col2.button("초기화", key=f"p_{u_id}"): c.execute('UPDATE users SET password="password123!" WHERE username=?', (u_id,)); conn.commit(); st.warning("password123!")
                 if col3.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
+                
