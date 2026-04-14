@@ -75,7 +75,11 @@ if st.session_state["logged_in"]:
     else:
         menu = ["📊 연락망 및 대시보드", "🌍 국가별 공조 특징", "📁 공조 자료실", "로그아웃"]
 
-choice = st.sidebar.selectbox("메뉴 선택", menu)
+# 🌟 [수정된 부분] 버튼 클릭 시 메뉴 이동을 연동하기 위해 세션 상태(nav_menu)를 관리합니다.
+if "nav_menu" not in st.session_state or st.session_state.nav_menu not in menu:
+    st.session_state.nav_menu = menu[0]
+
+choice = st.sidebar.selectbox("메뉴 선택", menu, key="nav_menu")
 
 # --- 6. 기능별 화면 구현 ---
 if choice == "로그아웃":
@@ -104,6 +108,14 @@ elif choice == "로그인":
                         st.rerun()
                     else: 
                         st.error("승인 대기 중이거나 정보가 틀립니다.")
+        
+        # 🌟 [추가된 부분] 폼 바로 아래에 중앙 정렬된 작은 '회원가입' 버튼 추가
+        st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+        _, btn_col, _ = st.columns([1, 1.2, 1]) # 버튼 크기를 작게 만들기 위해 좌우 여백 확보
+        with btn_col:
+            if st.button("회원가입", use_container_width=True):
+                st.session_state.nav_menu = "회원가입" # 사이드바 메뉴를 '회원가입'으로 자동 변경
+                st.rerun()
 
 elif choice == "회원가입":
     st.markdown('<div class="glass-box"><h2 style="margin:0;">📝 계정 신청</h2></div>', unsafe_allow_html=True)
@@ -131,7 +143,6 @@ elif choice == "🌍 국가별 공조 특징":
         c.execute("SELECT * FROM country_info WHERE country_name=?", (sel,))
         info = c.fetchone()
         
-        # 🌟 '조약' 관련 항목 표출 부분 삭제
         for title, content in [("📌 특징", info[1]), ("📞 연락처", info[3]), ("💡 팁", info[4])]:
             st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
@@ -198,7 +209,7 @@ elif choice == "⚙️ 데이터 관리":
         default_feat = ""
         default_cont = ""
         default_tips = ""
-        hidden_treaty = "" # 기존 조약 데이터 보존용 (테이블 구조 유지 목적)
+        hidden_treaty = ""
         
         if edit_choice != "--- 신규 추가 ---":
             c.execute("SELECT * FROM country_info WHERE country_name = ?", (edit_choice,))
@@ -206,14 +217,13 @@ elif choice == "⚙️ 데이터 관리":
             if target_data:
                 default_name = target_data[0]
                 default_feat = target_data[1]
-                hidden_treaty = target_data[2] # 화면에는 안 보이지만 DB 유지를 위해 담아둠
+                hidden_treaty = target_data[2]
                 default_cont = target_data[3]
                 default_tips = target_data[4]
 
         with st.form("country_form"):
             cn = st.text_input("국가명", value=default_name)
             cf = st.text_area("핵심 공조 특징", value=default_feat)
-            # 🌟 조약 입력창 삭제
             cc = st.text_area("주요 연락 창구", value=default_cont)
             cp = st.text_area("실무 업무 팁 및 주의사항", value=default_tips)
             
@@ -223,7 +233,6 @@ elif choice == "⚙️ 데이터 관리":
                 if cn.strip() == "":
                     st.error("국가명을 입력해주세요.")
                 else:
-                    # 🌟 5개 열을 맞추기 위해 hidden_treaty 값을 함께 넘겨줍니다
                     c.execute('INSERT OR REPLACE INTO country_info VALUES (?,?,?,?,?)', (cn, cf, hidden_treaty, cc, cp))
                     conn.commit()
                     st.success(f"{cn} 정보가 저장되었습니다.")
@@ -240,4 +249,3 @@ elif choice == "⚙️ 데이터 관리":
                     if col1.button("회수", key=f"r_{u_id}"): c.execute('UPDATE users SET status="pending" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
                 if col2.button("초기화", key=f"p_{u_id}"): c.execute('UPDATE users SET password="password123!" WHERE username=?', (u_id,)); conn.commit(); st.warning("password123!")
                 if col3.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
-                
