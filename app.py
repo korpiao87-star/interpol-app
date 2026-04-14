@@ -86,7 +86,7 @@ if choice == "로그아웃":
     st.rerun()
 
 elif choice == "로그인":
-    st.markdown("<div style='text-align: center; margin-bottom: 20px;'><h2 style='color: #002D56; font-weight: 900;'>🔒 인터폴팀<br>업무 지원 시스템</h2></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; margin-bottom: 20px;'><h2 style='color: #002D56; font-weight: 900;'>인터폴팀<br>업무 지원 시스템</h2></div>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
@@ -163,8 +163,22 @@ elif choice == "📁 공조 자료실":
     
     c.execute("SELECT id, filename, upload_date FROM file_archive")
     for fid, fname, fdate in c.fetchall():
-        st.markdown(f'<div class="glass-box"><b>{fname}</b> ({fdate})</div>', unsafe_allow_html=True)
-        with open(UPLOAD_DIR / fname, "rb") as f: st.download_button("다운로드", f, file_name=fname, key=f"dl_{fid}")
+        # 🌟 [수정된 부분] 파일의 실제 경로를 지정합니다.
+        full_path = UPLOAD_DIR / fname
+        
+        st.markdown(f'<div class="glass-box" style="margin-bottom: 5px;"><b>{fname}</b> ({fdate})</div>', unsafe_allow_html=True)
+        
+        # 🌟 [안전장치 추가] 실제 서버 폴더에 파일이 존재하는지 검사합니다.
+        if full_path.exists():
+            with open(full_path, "rb") as f: 
+                st.download_button("⬇️ 다운로드", f, file_name=fname, key=f"dl_{fid}")
+        else:
+            # 파일이 지워졌을 경우 에러 대신 경고 메시지를 띄우고 삭제 버튼을 제공합니다.
+            st.error("⚠️ 서버 초기화로 인해 실제 파일이 유실되었습니다.")
+            if st.button("🗑️ 이 기록 삭제", key=f"del_err_{fid}"):
+                c.execute("DELETE FROM file_archive WHERE id=?", (fid,))
+                conn.commit()
+                st.rerun()
 
 elif choice == "⚙️ 데이터 관리":
     if st.session_state.get("user_id") != "admin": st.error("권한이 없습니다."); st.stop()
