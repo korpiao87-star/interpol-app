@@ -149,7 +149,7 @@ elif choice == "🌍 국가별 공조 특징":
         sel = st.selectbox("국가 선택", countries)
         c.execute("SELECT * FROM country_info WHERE country_name=?", (sel,))
         info = c.fetchone()
-        for title, content in [("📌 특징", info[1]), ("📞 연락처", info[3]), ("💡 팁", info[4])]:
+        for title, content in [("📌 공조 특징", info[1]), ("📞 연락·문의처", info[3]), ("💡 공조 팁", info[4])]:
             st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
 elif choice == "📁 공조 자료실":
@@ -259,8 +259,8 @@ elif choice == "⚙️ 데이터 관리":
 
         with st.form("country_form"):
             cn = st.text_input("국가명", value=default_name)
-            cf = st.text_area("핵심 공조 특징", value=default_feat)
-            cc = st.text_area("주요 연락 창구", value=default_cont)
+            cf = st.text_area("공조 특징", value=default_feat)
+            cc = st.text_area("주요 연락·문의 창구", value=default_cont)
             cp = st.text_area("실무 업무 팁 및 주의사항", value=default_tips)
             
             submit_label = "정보 수정 저장" if edit_choice != "--- 신규 추가 ---" else "신규 정보 저장"
