@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "users.db"
 IMAGE_PATH = BASE_DIR / "blue_tiger.png"
+NAV_IMAGE_PATH = BASE_DIR / "navibar.png"  # 네비게이션바 이미지 경로
 
 if not UPLOAD_DIR.exists():
     os.makedirs(UPLOAD_DIR)
@@ -39,15 +40,12 @@ if IMAGE_PATH.exists():
         unsafe_allow_html=True
     )
 
-# --- 3. 앱 디자인(CSS) ---
-# 사이드바 관련 CSS를 제거하고 하단 여백 등 일부 디자인을 추가했습니다.
+# --- 3. 앱 공통 디자인(CSS) ---
 st.markdown("""
 <style>
     .stButton>button, .stFormSubmitButton>button { background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }
     .glass-box { background-color: rgba(255, 255, 255, 0.85); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }
     .glass-box h4 { color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }
-    /* 하단 메뉴바가 들어갈 자리를 위해 메인 컨테이너 하단 여백 확보 */
-    .block-container { padding-bottom: 100px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,7 +59,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2
               contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
-# 🌟 [신규 추가] Q&A 게시판을 위한 테이블 생성
 c.execute('CREATE TABLE IF NOT EXISTS qna (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT, question TEXT, date TEXT)')
 conn.commit()
 
@@ -73,7 +70,7 @@ if "logged_in" not in st.session_state:
 if "nav_menu" not in st.session_state:
     st.session_state.nav_menu = "로그인"
 
-# --- 5. 기능별 화면 구현 (사이드바 메뉴 로직 대체) ---
+# --- 5. 기능별 화면 구현 ---
 choice = st.session_state.nav_menu
 
 if choice == "로그아웃":
@@ -125,7 +122,7 @@ elif not st.session_state["logged_in"]:
                         data = c.fetchone()
                         if data:
                             st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data[2], data[0]
-                            st.session_state.nav_menu = "홈" # 로그인 성공 시 홈으로 이동
+                            st.session_state.nav_menu = "홈" 
                             st.rerun()
                         else: 
                             st.error("승인 대기 중이거나 정보가 틀립니다.")
@@ -139,6 +136,77 @@ elif not st.session_state["logged_in"]:
 
 # ----------------- [로그인 후 메인 앱 화면] -----------------
 else:
+    # 🌟 [해결된 코드] 하단 네비게이션 바 고정 및 클릭 오류, 모바일 깨짐 현상 완벽 수정
+    nav_img_css = ""
+    button_text_css = "color: transparent !important;" 
+    if NAV_IMAGE_PATH.exists():
+        nav_img_base64 = get_base64_of_bin_file(str(NAV_IMAGE_PATH))
+        nav_img_css = f'background-image: url("data:image/png;base64,{nav_img_base64}"); background-size: 100% 100%; background-position: center bottom; background-repeat: no-repeat;'
+    else:
+        nav_img_css = "background-color: #f4f8fe; border-top: 1px solid #d1e1f0;" 
+        button_text_css = "color: #002D56 !important; font-weight: bold; font-size: 14px;" 
+
+    st.markdown(f"""
+    <style>
+        /* 본문이 네비게이션 바에 가려지지 않도록 여백 확보 */
+        .block-container {{ padding-bottom: 120px !important; }}
+        
+        /* 1. 가장 마지막에 생성된 가로 분할(st.columns) 요소를 정밀 타겟팅하여 하단에 고정 */
+        div[data-testid="stHorizontalBlock"]:last-of-type {{
+            display: flex !important;
+            flex-direction: row !important; /* 모바일에서 세로로 깨지는 것 방지 */
+            flex-wrap: nowrap !important;
+            position: fixed !important;
+            bottom: 0px !important;
+            left: 0px !important;
+            width: 100vw !important;
+            height: 85px !important;
+            {nav_img_css}
+            z-index: 999999 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            gap: 0px !important;
+        }}
+        
+        /* 2. 각 버튼이 들어가는 5개의 공간의 여백을 없애고 정확히 20%씩 강제 배분 */
+        div[data-testid="stHorizontalBlock"]:last-of-type > div[data-testid="column"] {{
+            width: 20% !important;
+            min-width: 20% !important;
+            flex: 1 1 auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex;
+            align-items: stretch;
+        }}
+
+        /* 3. 버튼 껍데기를 투명하게 만들고, 클릭 영역을 100%로 꽉 채움 */
+        div[data-testid="stHorizontalBlock"]:last-of-type button {{
+            background-color: transparent !important;
+            border: none !important;
+            width: 100% !important;
+            height: 100% !important; 
+            min-height: 85px !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+        }}
+        
+        /* 4. 버튼 안의 글씨 투명화 (백그라운드 이미지가 글씨를 대신하므로) */
+        div[data-testid="stHorizontalBlock"]:last-of-type button * {{
+            {button_text_css}
+        }}
+
+        /* 5. 버튼을 눌렀을 때 옅은 시각적 피드백 제공 */
+        div[data-testid="stHorizontalBlock"]:last-of-type button:hover {{
+            background-color: rgba(0, 0, 0, 0.05) !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:last-of-type button:active {{
+            background-color: rgba(0, 0, 0, 0.1) !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
     # 🌟 1) 홈 화면
     if choice == "홈":
         st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {st.session_state["user_name"]} 수사관님!</h2><p>원하시는 메뉴를 선택하세요.</p></div>', unsafe_allow_html=True)
@@ -159,7 +227,6 @@ else:
             st.session_state.nav_menu = "Q&A"
             st.rerun()
 
-        # 관리자 전용 메뉴 및 공통 로그아웃 메뉴
         st.markdown("<hr>", unsafe_allow_html=True)
         admin_col, logout_col = st.columns(2)
         if st.session_state.get("user_id") == "admin":
@@ -215,7 +282,7 @@ else:
                     conn.commit()
                     st.rerun()
 
-    # 🌟 5) Q&A 화면 (신규 추가)
+    # 🌟 5) Q&A 화면
     elif choice == "Q&A":
         st.markdown('<div class="glass-box"><h2>💬 Q&A 게시판</h2><p>업무 중 궁금한 사항을 자유롭게 남겨주세요.</p></div>', unsafe_allow_html=True)
         
@@ -330,25 +397,22 @@ else:
                     if col3.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
 
     # ----------------- [하단 네비게이션 바] -----------------
-    st.markdown("<br><br>", unsafe_allow_html=True) # 본문과 네비게이션 간격 확보
-    st.markdown("<hr style='margin:0; padding:0;'>", unsafe_allow_html=True)
-    
-    # 5개의 버튼을 동일한 비율로 배치
+    # 이 부분이 무조건 코드의 가장 마지막에 있어야 CSS가 정확히 조준합니다.
     nav1, nav2, nav3, nav4, nav5 = st.columns(5)
     
-    if nav1.button("📊 연락망", use_container_width=True, key="b1"):
+    if nav1.button("연락망", use_container_width=True, key="b1"):
         st.session_state.nav_menu = "연락망"
         st.rerun()
-    if nav2.button("🌍 국가별지원", use_container_width=True, key="b2"):
+    if nav2.button("국가별지원", use_container_width=True, key="b2"):
         st.session_state.nav_menu = "국가별지원"
         st.rerun()
-    if nav3.button("🏠 홈", use_container_width=True, key="b3"):
+    if nav3.button("홈", use_container_width=True, key="b3"):
         st.session_state.nav_menu = "홈"
         st.rerun()
-    if nav4.button("📁 자료실", use_container_width=True, key="b4"):
+    if nav4.button("자료실", use_container_width=True, key="b4"):
         st.session_state.nav_menu = "자료실"
         st.rerun()
-    if nav5.button("💬 Q&A", use_container_width=True, key="b5"):
+    if nav5.button("Q&A", use_container_width=True, key="b5"):
         st.session_state.nav_menu = "Q&A"
         st.rerun()
         
