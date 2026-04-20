@@ -62,7 +62,7 @@ c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOI
 c.execute('CREATE TABLE IF NOT EXISTS qna (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT, question TEXT, date TEXT)')
 conn.commit()
 
-# 초기 세션 상태 설정
+# --- 5. 세션 상태 및 자동 로그인 유지 설정 ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["user_id"] = ""
@@ -70,13 +70,28 @@ if "logged_in" not in st.session_state:
 if "nav_menu" not in st.session_state:
     st.session_state.nav_menu = "로그인"
 
-# --- 5. 기능별 화면 구현 ---
+# 🌟 [자동 로그인 로직]
+if not st.session_state.get("logged_in") and "user" in st.query_params:
+    saved_user = st.query_params["user"]
+    if saved_user == "admin":
+        st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, "관리자", "admin"
+        if st.session_state.nav_menu == "로그인": st.session_state.nav_menu = "홈"
+    else:
+        c.execute('SELECT * FROM users WHERE username=? AND status="approved"', (saved_user,))
+        data = c.fetchone()
+        if data:
+            st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data[2], data[0]
+            if st.session_state.nav_menu == "로그인": st.session_state.nav_menu = "홈"
+
+# --- 6. 기능별 화면 구현 ---
 choice = st.session_state.nav_menu
 
+# 🌟 [로그아웃 로직]
 if choice == "로그아웃":
     st.session_state["logged_in"] = False
     st.session_state["user_id"] = ""
     st.session_state.nav_menu = "로그인"
+    st.query_params.clear() 
     st.rerun()
 
 # ----------------- [로그인 전 화면] -----------------
@@ -115,13 +130,15 @@ elif not st.session_state["logged_in"]:
                 if submit_btn:
                     if user_id == "admin" and user_pw == "1234":
                         st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, "관리자", "admin"
-                        st.session_state.nav_menu = "홈" # 로그인 성공 시 홈으로 이동
+                        st.query_params["user"] = "admin" 
+                        st.session_state.nav_menu = "홈"
                         st.rerun()
                     else:
                         c.execute('SELECT * FROM users WHERE username=? AND password=? AND status="approved"', (user_id, user_pw))
                         data = c.fetchone()
                         if data:
                             st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data[2], data[0]
+                            st.query_params["user"] = data[0] 
                             st.session_state.nav_menu = "홈" 
                             st.rerun()
                         else: 
@@ -136,25 +153,23 @@ elif not st.session_state["logged_in"]:
 
 # ----------------- [로그인 후 메인 앱 화면] -----------------
 else:
-    # 🌟 [해결된 코드] 하단 네비게이션 바 고정 및 클릭 오류, 모바일 깨짐 현상 완벽 수정
     nav_img_css = ""
-    button_text_css = "color: transparent !important;" 
+    button_text_css = "color: transparent !important; font-size: 0px !important;" 
     if NAV_IMAGE_PATH.exists():
         nav_img_base64 = get_base64_of_bin_file(str(NAV_IMAGE_PATH))
         nav_img_css = f'background-image: url("data:image/png;base64,{nav_img_base64}"); background-size: 100% 100%; background-position: center bottom; background-repeat: no-repeat;'
     else:
         nav_img_css = "background-color: #f4f8fe; border-top: 1px solid #d1e1f0;" 
-        button_text_css = "color: #002D56 !important; font-weight: bold; font-size: 14px;" 
+        button_text_css = "color: #002D56 !important; font-weight: bold; font-size: 14px !important;" 
 
     st.markdown(f"""
     <style>
-        /* 본문이 네비게이션 바에 가려지지 않도록 여백 확보 */
         .block-container {{ padding-bottom: 120px !important; }}
         
-        /* 1. 가장 마지막에 생성된 가로 분할(st.columns) 요소를 정밀 타겟팅하여 하단에 고정 */
-        div[data-testid="stHorizontalBlock"]:last-of-type {{
+        /* 🌟 핵심 수정: "정확히 5칸을 가진 구역"만 골라서 하단에 고정시킵니다. (다른 버튼들은 안전합니다!) */
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) {{
             display: flex !important;
-            flex-direction: row !important; /* 모바일에서 세로로 깨지는 것 방지 */
+            flex-direction: row !important;
             flex-wrap: nowrap !important;
             position: fixed !important;
             bottom: 0px !important;
@@ -168,19 +183,27 @@ else:
             gap: 0px !important;
         }}
         
-        /* 2. 각 버튼이 들어가는 5개의 공간의 여백을 없애고 정확히 20%씩 강제 배분 */
-        div[data-testid="stHorizontalBlock"]:last-of-type > div[data-testid="column"] {{
-            width: 20% !important;
-            min-width: 20% !important;
-            flex: 1 1 auto !important;
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) > div[data-testid="column"] {{
+            width: 20vw !important;
+            min-width: 20vw !important;
+            max-width: 20vw !important;
+            flex: 0 0 20vw !important;
             padding: 0 !important;
             margin: 0 !important;
+            height: 100% !important;
             display: flex;
             align-items: stretch;
+            justify-content: center;
         }}
 
-        /* 3. 버튼 껍데기를 투명하게 만들고, 클릭 영역을 100%로 꽉 채움 */
-        div[data-testid="stHorizontalBlock"]:last-of-type button {{
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) div.stButton {{
+            width: 100% !important;
+            height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }}
+
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button {{
             background-color: transparent !important;
             border: none !important;
             width: 100% !important;
@@ -190,18 +213,14 @@ else:
             padding: 0 !important;
             margin: 0 !important;
             border-radius: 0 !important;
+            {button_text_css}
         }}
         
-        /* 4. 버튼 안의 글씨 투명화 (백그라운드 이미지가 글씨를 대신하므로) */
-        div[data-testid="stHorizontalBlock"]:last-of-type button * {{
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button * {{
             {button_text_css}
         }}
 
-        /* 5. 버튼을 눌렀을 때 옅은 시각적 피드백 제공 */
-        div[data-testid="stHorizontalBlock"]:last-of-type button:hover {{
-            background-color: rgba(0, 0, 0, 0.05) !important;
-        }}
-        div[data-testid="stHorizontalBlock"]:last-of-type button:active {{
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button:active {{
             background-color: rgba(0, 0, 0, 0.1) !important;
         }}
     </style>
@@ -209,6 +228,17 @@ else:
 
     # 🌟 1) 홈 화면
     if choice == "홈":
+        # 우측 상단에 설정 및 로그아웃 버튼 배치 (3칸짜리 구역이므로 하단 네비게이션 CSS에 영향을 받지 않습니다)
+        t_col1, t_col2, t_col3 = st.columns([7, 1.5, 1.5])
+        with t_col2:
+            if st.button("⚙️ 설정", use_container_width=True, key="top_setting"):
+                st.session_state.nav_menu = "설정"
+                st.rerun()
+        with t_col3:
+            if st.button("🚪 로그아웃", use_container_width=True, key="top_logout"):
+                st.session_state.nav_menu = "로그아웃"
+                st.rerun()
+
         st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {st.session_state["user_name"]} 수사관님!</h2><p>원하시는 메뉴를 선택하세요.</p></div>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
@@ -227,17 +257,47 @@ else:
             st.session_state.nav_menu = "Q&A"
             st.rerun()
 
-        st.markdown("<hr>", unsafe_allow_html=True)
-        admin_col, logout_col = st.columns(2)
+        # 관리자 전용 데이터 관리 버튼
         if st.session_state.get("user_id") == "admin":
-            if admin_col.button("⚙️ 데이터 관리 (관리자용)", use_container_width=True):
+            st.markdown("<hr>", unsafe_allow_html=True)
+            if st.button("⚙️ 데이터 관리 (관리자용)", use_container_width=True):
                 st.session_state.nav_menu = "데이터 관리"
                 st.rerun()
-        if logout_col.button("🚪 로그아웃", use_container_width=True):
-            st.session_state.nav_menu = "로그아웃"
-            st.rerun()
 
-    # 🌟 2) 연락망 및 대시보드 화면
+    # 🌟 2) 설정 화면 (개인정보 수정)
+    elif choice == "설정":
+        st.markdown('<div class="glass-box"><h2>⚙️ 개인정보 설정</h2><p>내 정보를 수정할 수 있습니다.</p></div>', unsafe_allow_html=True)
+        
+        if st.session_state["user_id"] == "admin":
+            st.warning("⚠️ 관리자(admin) 계정은 보안상 이 페이지에서 정보를 수정할 수 없습니다.")
+        else:
+            c.execute('SELECT name, password FROM users WHERE username=?', (st.session_state["user_id"],))
+            user_info = c.fetchone()
+            
+            if user_info:
+                current_name = user_info[0]
+                current_pw = user_info[1]
+                
+                with st.form("settings_form"):
+                    edit_name = st.text_input("성명 (이름)", value=current_name)
+                    st.markdown("<small>비밀번호를 변경하지 않으려면 아래 칸을 비워두세요.</small>", unsafe_allow_html=True)
+                    edit_pw = st.text_input("새로운 비밀번호", type="password")
+                    edit_pw_confirm = st.text_input("새로운 비밀번호 확인", type="password")
+                    
+                    if st.form_submit_button("정보 수정 저장", use_container_width=True):
+                        new_pw = edit_pw if edit_pw.strip() != "" else current_pw
+                        
+                        if edit_pw.strip() != "" and edit_pw != edit_pw_confirm:
+                            st.error("새로운 비밀번호가 일치하지 않습니다.")
+                        elif edit_name.strip() == "":
+                            st.error("성명을 입력해주세요.")
+                        else:
+                            c.execute('UPDATE users SET name=?, password=? WHERE username=?', (edit_name, new_pw, st.session_state["user_id"]))
+                            conn.commit()
+                            st.session_state["user_name"] = edit_name 
+                            st.success("개인정보가 성공적으로 수정되었습니다.")
+                            
+    # 🌟 3) 연락망 및 대시보드 화면
     elif choice == "연락망":
         st.markdown('<div class="glass-box"><h2>📊 연락망 및 대시보드</h2></div>', unsafe_allow_html=True)
         search = st.text_input("연락망 통합 검색", placeholder="국가, 성명, 구분 등 검색")
@@ -246,7 +306,7 @@ else:
         df = pd.read_sql_query(query, conn)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # 🌟 3) 국가별 공조 특징 화면
+    # 🌟 4) 국가별 공조 특징 화면
     elif choice == "국가별지원":
         st.markdown('<div class="glass-box"><h2>🌍 국가별 공조 특징</h2></div>', unsafe_allow_html=True)
         c.execute("SELECT country_name FROM country_info")
@@ -258,7 +318,7 @@ else:
             for title, content in [("📌 공조 특징", info[1]), ("📞 연락·문의처", info[3]), ("💡 공조 팁", info[4])]:
                 st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
 
-    # 🌟 4) 공조 자료실 화면
+    # 🌟 5) 공조 자료실 화면
     elif choice == "자료실":
         st.markdown('<div class="glass-box"><h2>📁 팀 공용 자료실</h2></div>', unsafe_allow_html=True)
         with st.expander("파일 업로드"):
@@ -282,7 +342,7 @@ else:
                     conn.commit()
                     st.rerun()
 
-    # 🌟 5) Q&A 화면
+    # 🌟 6) Q&A 화면
     elif choice == "Q&A":
         st.markdown('<div class="glass-box"><h2>💬 Q&A 게시판</h2><p>업무 중 궁금한 사항을 자유롭게 남겨주세요.</p></div>', unsafe_allow_html=True)
         
@@ -311,7 +371,7 @@ else:
                 </div>
                 ''', unsafe_allow_html=True)
 
-    # 🌟 6) 데이터 관리 (관리자 전용 기능)
+    # 🌟 7) 데이터 관리 (관리자 전용 기능)
     elif choice == "데이터 관리":
         if st.session_state.get("user_id") != "admin": st.error("권한이 없습니다."); st.stop()
         tab1, tab2, tab3 = st.tabs(["👤 연락망 관리", "🌍 국가정보 관리", "👥 사용자 관리"])
@@ -397,7 +457,7 @@ else:
                     if col3.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
 
     # ----------------- [하단 네비게이션 바] -----------------
-    # 이 부분이 무조건 코드의 가장 마지막에 있어야 CSS가 정확히 조준합니다.
+    # 이 구역은 "정확히 5칸"이므로 하단 고정 CSS가 정상적으로 적용됩니다!
     nav1, nav2, nav3, nav4, nav5 = st.columns(5)
     
     if nav1.button("연락망", use_container_width=True, key="b1"):
