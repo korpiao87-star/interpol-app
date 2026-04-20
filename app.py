@@ -3,99 +3,236 @@ import sqlite3
 import pandas as pd
 import os
 import base64
-from datetime import datetime
-from pathlib import Path
 import io
+import html
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta
+from pathlib import Path
 
 # --- 0. 경로 설정 ---
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "users.db"
 IMAGE_PATH = BASE_DIR / "blue_tiger.png"
-NAV_IMAGE_PATH = BASE_DIR / "navibar.png"  # 네비게이션바 이미지 경로
+NAV_IMAGE_PATH = BASE_DIR / "navibar.png"
 
-if not UPLOAD_DIR.exists():
-    os.makedirs(UPLOAD_DIR)
+UPLOAD_DIR.mkdir(exist_ok=True)
 
-# --- 1. 기본 화면 설정 ---
-st.set_page_config(page_title="서울경찰청 인터폴팀", page_icon="🕵️", layout="wide")
+# --- 1. 기본 설정 ---
+APP_TITLE = "서울경찰청 인터폴팀"
+ADMIN_USERNAME = "admin"
+INITIAL_ADMIN_PASSWORD = os.getenv("APP_ADMIN_PASSWORD", "1234") # 기본 초기 비밀번호
+PASSWORD_SCHEME = "pbkdf2_sha256"
+PBKDF2_ITERATIONS = 200_000
+SESSION_TIMEOUT_MINUTES = 30
+ALLOWED_FILE_TYPES = ['hwp', 'hwpx', 'pdf', 'docx', 'jpg', 'png', 'jpeg']
 
-# --- 2. 배경 이미지 설정 ---
-def get_base64_of_bin_file(bin_file):
+st.set_page_config(page_title=APP_TITLE, page_icon="🕵️", layout="wide")
+
+# --- 2. 유틸 함수 ---
+def get_base64_of_bin_file(bin_file: str) -> str:
     with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+        return base64.b64encode(f.read()).decode()
 
-if IMAGE_PATH.exists():
-    img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{
-            background-image: linear-gradient(rgba(255,255,255,0.4), rgba(255,255,255,0.4)), url("data:image/png;base64,{img_base64}");
-            background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+def escape_text(value) -> str:
+    return html.escape(str(value if value is not None else ""))
 
-# --- 3. 앱 공통 디자인(CSS) ---
-st.markdown("""
-<style>
-    .stButton>button, .stFormSubmitButton>button { background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }
-    .glass-box { background-color: rgba(255, 255, 255, 0.85); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }
-    .glass-box h4 { color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }
-</style>
-""", unsafe_allow_html=True)
+def escape_text_with_br(value) -> str:
+    return escape_text(value).replace("\n", "<br>")
 
-# --- 4. 데이터베이스 초기화 ---
+def now_dt() -> datetime:
+    return datetime.now()
+
+def now_str() -> str:
+    return now_dt().strftime("%Y-%m-%d %H:%M:%S")
+
+def is_hashed_password(value: str) -> bool:
+    return isinstance(value, str) and value.startswith(f"{PASSWORD_SCHEME}$")
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
+    return f"{PASSWORD_SCHEME}${PBKDF2_ITERATIONS}${base64.b64encode(salt).decode()}${base64.b64encode(derived).decode()}"
+
+def verify_password(password: str, stored_value: str) -> bool:
+    if not stored_value:
+        return False
+    if is_hashed_password(stored_value):
+        try:
+            _, iter_str, salt_b64, hash_b64 = stored_value.split("$", 3)
+            salt = base64.b64decode(salt_b64.encode())
+            expected = base64.b64decode(hash_b64.encode())
+            candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iter_str))
+            return hmac.compare_digest(candidate, expected)
+        except Exception:
+            return False
+    # 구버전 평문 비밀번호 호환
+    return hmac.compare_digest(password, stored_value)
+
+def make_storage_name(original_name: str) -> str:
+    safe_name = Path(original_name).name
+    suffix = Path(safe_name).suffix.lower()
+    return f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}{suffix}"
+
+def generate_temp_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+def is_admin() -> bool:
+    return st.session_state.get("user_id") == ADMIN_USERNAME
+
+# --- 3. 세션 및 초기화 관리 ---
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = ""
+if "user_name" not in st.session_state:
+    st.session_state["user_name"] = ""
+if "nav_menu" not in st.session_state:
+    st.session_state["nav_menu"] = "로그인"
+
+def clear_auth_state():
+    st.session_state["logged_in"] = False
+    st.session_state["user_id"] = ""
+    st.session_state["user_name"] = ""
+    st.session_state["nav_menu"] = "로그인"
+    st.session_state.pop("last_activity", None)
+
+def refresh_last_activity():
+    st.session_state["last_activity"] = now_dt().isoformat()
+
+# 타임아웃 검사
+if st.session_state.get("logged_in"):
+    last_activity_raw = st.session_state.get("last_activity")
+    last_activity = None
+    if last_activity_raw:
+        try:
+            last_activity = datetime.fromisoformat(last_activity_raw)
+        except Exception:
+            pass
+
+    if last_activity and now_dt() - last_activity > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
+        clear_auth_state()
+        st.session_state["timeout_notice"] = f"{SESSION_TIMEOUT_MINUTES}분 동안 활동이 없어 자동 로그아웃되었습니다."
+        st.rerun()
+    else:
+        refresh_last_activity()
+
+choice = st.session_state.nav_menu
+
+# --- 4. DB 연결 / 마이그레이션 ---
 conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+conn.row_factory = sqlite3.Row
 c = conn.cursor()
 
+def column_exists(table_name: str, column_name: str) -> bool:
+    c.execute(f"PRAGMA table_info({table_name})")
+    return any(row["name"] == column_name for row in c.fetchall())
+
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, name TEXT, department TEXT, status TEXT)')
-c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2 
-             (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, affiliation TEXT, name TEXT, 
+c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, affiliation TEXT, name TEXT,
               contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS qna (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT, question TEXT, date TEXT)')
+c.execute('CREATE TABLE IF NOT EXISTS qna_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, qna_id INTEGER, author TEXT, comment TEXT, date TEXT, comment_type TEXT DEFAULT "comment")')
+c.execute('CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT, detail TEXT, created_at TEXT)')
+c.execute('CREATE TABLE IF NOT EXISTS app_config (config_key TEXT PRIMARY KEY, config_value TEXT)')
+
+if not column_exists("file_archive", "uploader"):
+    c.execute("ALTER TABLE file_archive ADD COLUMN uploader TEXT")
+if not column_exists("users", "role"):
+    c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    c.execute("UPDATE users SET role='admin' WHERE username=?", (ADMIN_USERNAME,))
+
+try:
+    c.execute("SELECT id, filename, filepath, uploader FROM file_archive")
+    for row in c.fetchall():
+        if not row["filepath"]:
+            c.execute("UPDATE file_archive SET filepath=? WHERE id=?", (row["filename"], row["id"]))
+        if row["uploader"] is None:
+            c.execute("UPDATE file_archive SET uploader=? WHERE id=?", ("알 수 없음", row["id"]))
+except Exception:
+    pass
+
+c.execute("SELECT config_value FROM app_config WHERE config_key='admin_password_hash'")
+if not c.fetchone():
+    c.execute("INSERT OR REPLACE INTO app_config (config_key, config_value) VALUES (?, ?)", ("admin_password_hash", hash_password(INITIAL_ADMIN_PASSWORD)))
 conn.commit()
 
-# --- 5. 세션 상태 및 자동 로그인 유지 설정 ---
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["user_id"] = ""
+# --- 5. 설정 / 로그 함수 ---
+def get_config(key: str, default: str = "") -> str:
+    c.execute("SELECT config_value FROM app_config WHERE config_key=?", (key,))
+    row = c.fetchone()
+    return row["config_value"] if row else default
 
-if "nav_menu" not in st.session_state:
-    st.session_state.nav_menu = "로그인"
+def set_config(key: str, value: str):
+    c.execute("INSERT OR REPLACE INTO app_config (config_key, config_value) VALUES (?, ?)", (key, value))
+    conn.commit()
 
-# 🌟 [자동 로그인 로직]
-if not st.session_state.get("logged_in") and "user" in st.query_params:
-    saved_user = st.query_params["user"]
-    if saved_user == "admin":
-        st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, "관리자", "admin"
-        if st.session_state.nav_menu == "로그인": st.session_state.nav_menu = "홈"
-    else:
-        c.execute('SELECT * FROM users WHERE username=? AND status="approved"', (saved_user,))
-        data = c.fetchone()
-        if data:
-            st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data[2], data[0]
-            if st.session_state.nav_menu == "로그인": st.session_state.nav_menu = "홈"
+def log_event(username: str, action: str, detail: str = ""):
+    try:
+        c.execute("INSERT INTO audit_log (username, action, detail, created_at) VALUES (?, ?, ?, ?)",
+                  ((username or "알 수 없음")[:100], action[:100], detail[:500], now_str()))
+        conn.commit()
+    except Exception:
+        pass
 
-# --- 6. 기능별 화면 구현 ---
-choice = st.session_state.nav_menu
+def build_like_pattern(text: str) -> str:
+    return f"%{text.strip()}%"
 
-# 🌟 [로그아웃 로직]
+def fetch_distinct_values(table_name: str, column_name: str):
+    c.execute(f"SELECT DISTINCT {column_name} AS value FROM {table_name} WHERE {column_name} IS NOT NULL AND TRIM({column_name}) <> '' ORDER BY {column_name} ASC")
+    return [row["value"] for row in c.fetchall()]
+
+def get_file_ext(filename: str) -> str:
+    return Path(filename).suffix.lower().replace(".", "")
+
+def get_file_kind(filename: str) -> str:
+    ext = get_file_ext(filename)
+    if ext in {"jpg", "jpeg", "png", "gif", "bmp", "webp"}: return "이미지"
+    if ext == "pdf": return "PDF"
+    return "문서"
+
+def format_file_size(num_bytes: int) -> str:
+    if num_bytes < 1024: return f"{num_bytes} B"
+    if num_bytes < 1024 * 1024: return f"{num_bytes / 1024:.1f} KB"
+    return f"{num_bytes / (1024 * 1024):.1f} MB"
+
+def get_qna_status_class(status_text: str) -> str:
+    return "status-done" if status_text == "답변완료" else "status-open"
+
+
+# --- 6. 로그아웃 처리 ---
 if choice == "로그아웃":
-    st.session_state["logged_in"] = False
-    st.session_state["user_id"] = ""
-    st.session_state.nav_menu = "로그인"
-    st.query_params.clear() 
+    if st.session_state.get("logged_in"):
+        log_event(st.session_state.get("user_id", "미상"), "로그아웃", "사용자 로그아웃")
+    clear_auth_state()
     st.rerun()
 
-# ----------------- [로그인 전 화면] -----------------
-elif not st.session_state["logged_in"]:
+# --- 7. 로그인 전 화면 ---
+elif not st.session_state.get("logged_in"):
+    
+    # 배경 및 CSS 적용
+    if IMAGE_PATH.exists():
+        img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
+        st.markdown(f'<style>.stApp {{ background-image: linear-gradient(rgba(255,255,255,0.40), rgba(255,255,255,0.40)), url("data:image/png;base64,{img_base64}"); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; }}</style>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <style>
+        .stButton>button, .stFormSubmitButton>button { background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }
+        .glass-box { background-color: rgba(255, 255, 255, 0.88); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }
+        .glass-box h4 { color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    timeout_notice = st.session_state.pop("timeout_notice", None)
+    if timeout_notice:
+        st.warning(timeout_notice)
+
     if choice == "회원가입":
         st.markdown('<div class="glass-box"><h2 style="margin:0;">📝 계정 신청</h2></div>', unsafe_allow_html=True)
         with st.form("signup"):
@@ -103,22 +240,33 @@ elif not st.session_state["logged_in"]:
             new_name = st.text_input("성명")
             new_pw = st.text_input("비밀번호", type='password')
             new_pw_confirm = st.text_input("비밀번호 재확인", type='password')
-            
+
             if st.form_submit_button("신청하기", use_container_width=True):
-                if new_pw != new_pw_confirm:
+                new_id = new_id.strip()
+                new_name = new_name.strip()
+                if not new_id or not new_name or not new_pw.strip():
+                    st.error("아이디, 성명, 비밀번호를 모두 입력해주세요.")
+                elif new_pw != new_pw_confirm:
                     st.error("비밀번호가 일치하지 않습니다. 다시 확인해주세요.")
+                elif len(new_pw) < 8:
+                    st.error("비밀번호는 최소 8자 이상으로 설정해주세요.")
+                elif new_id.lower() == ADMIN_USERNAME:
+                    st.error("사용할 수 없는 아이디입니다.")
                 else:
                     try:
-                        c.execute('INSERT INTO users VALUES (?,?,?,?,?)', (new_id, new_pw, new_name, "인터폴", "pending"))
+                        c.execute('INSERT INTO users (username, password, name, department, status, role) VALUES (?,?,?,?,?,?)',
+                                  (new_id, hash_password(new_pw), new_name, "인터폴", "pending", "user"))
                         conn.commit()
+                        log_event(new_id, "회원가입 신청", f"신청자: {new_name}")
                         st.success("신청 완료! 관리자 승인을 기다려주세요.")
-                    except: 
+                    except sqlite3.IntegrityError:
                         st.error("이미 존재하는 아이디입니다.")
+
         if st.button("로그인 화면으로 돌아가기", use_container_width=True):
             st.session_state.nav_menu = "로그인"
             st.rerun()
 
-    else: # 로그인 화면
+    else:
         st.markdown("<div style='text-align: center; margin-bottom: 20px;'><h2 style='color: #002D56; font-weight: 900;'>인터폴팀<br>업무 지원 시스템</h2></div>", unsafe_allow_html=True)
         _, col2, _ = st.columns([1, 2, 1])
         with col2:
@@ -126,33 +274,47 @@ elif not st.session_state["logged_in"]:
                 user_id = st.text_input("아이디")
                 user_pw = st.text_input("비밀번호", type='password')
                 submit_btn = st.form_submit_button("로그인", use_container_width=True)
-                
+
                 if submit_btn:
-                    if user_id == "admin" and user_pw == "1234":
-                        st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, "관리자", "admin"
-                        st.query_params["user"] = "admin" 
-                        st.session_state.nav_menu = "홈"
-                        st.rerun()
-                    else:
-                        c.execute('SELECT * FROM users WHERE username=? AND password=? AND status="approved"', (user_id, user_pw))
-                        data = c.fetchone()
-                        if data:
-                            st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data[2], data[0]
-                            st.query_params["user"] = data[0] 
-                            st.session_state.nav_menu = "홈" 
+                    user_id = user_id.strip()
+                    user_pw = user_pw.strip()
+
+                    if user_id == ADMIN_USERNAME:
+                        admin_hash = get_config("admin_password_hash", hash_password(INITIAL_ADMIN_PASSWORD))
+                        if verify_password(user_pw, admin_hash):
+                            st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, "관리자", ADMIN_USERNAME
+                            refresh_last_activity()
+                            log_event(ADMIN_USERNAME, "로그인 성공", "관리자 로그인")
+                            st.session_state.nav_menu = "홈"
                             st.rerun()
-                        else: 
-                            st.error("승인 대기 중이거나 정보가 틀립니다.")
+                        else:
+                            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+                    else:
+                        c.execute('SELECT username, password, name, status FROM users WHERE username=?', (user_id,))
+                        data = c.fetchone()
+                        if not data:
+                            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+                        elif data["status"] != "approved":
+                            st.error("승인 대기 중이거나 접근 권한이 없습니다.")
+                        elif verify_password(user_pw, data["password"]):
+                            if not is_hashed_password(data["password"]):
+                                c.execute('UPDATE users SET password=? WHERE username=?', (hash_password(user_pw), user_id))
+                                conn.commit()
+                            st.session_state["logged_in"], st.session_state["user_name"], st.session_state["user_id"] = True, data["name"], data["username"]
+                            refresh_last_activity()
+                            log_event(user_id, "로그인 성공", "일반 사용자 로그인")
+                            st.session_state.nav_menu = "홈"
+                            st.rerun()
+                        else:
+                            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
 
-            def go_to_signup():
+            if st.button("회원가입", use_container_width=True):
                 st.session_state.nav_menu = "회원가입"
+                st.rerun()
 
-            st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
-            st.button("회원가입", on_click=go_to_signup, use_container_width=True)
-
-
-# ----------------- [로그인 후 메인 앱 화면] -----------------
+# --- 8. 로그인 후 메인 화면 ---
 else:
+    # 로그인 후 전용 공통 CSS (네비게이션 포함)
     nav_img_css = ""
     button_text_css = "color: transparent !important; font-size: 0px !important;" 
     if NAV_IMAGE_PATH.exists():
@@ -162,11 +324,28 @@ else:
         nav_img_css = "background-color: #f4f8fe; border-top: 1px solid #d1e1f0;" 
         button_text_css = "color: #002D56 !important; font-weight: bold; font-size: 14px !important;" 
 
+    if IMAGE_PATH.exists():
+        img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
+        st.markdown(f'<style>.stApp {{ background-image: linear-gradient(rgba(255,255,255,0.40), rgba(255,255,255,0.40)), url("data:image/png;base64,{img_base64}"); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; }}</style>', unsafe_allow_html=True)
+
     st.markdown(f"""
     <style>
+        .stButton>button, .stFormSubmitButton>button {{ background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }}
+        .glass-box {{ background-color: rgba(255, 255, 255, 0.88); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }}
+        .glass-box h4 {{ color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }}
+        
+        .contact-card, .file-card, .comment-card {{ background: rgba(255,255,255,0.92); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
+        .answer-card {{ background: rgba(232,244,255,0.96); border: 1px solid rgba(0,82,155,0.25); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
+        .contact-meta, .file-meta, .comment-meta {{ color: #55616F; font-size: 0.9rem; margin-bottom: 6px; }}
+        .question-wrap {{ background-color: rgba(255,255,255,0.90); border-radius: 16px; border: 1px solid rgba(0,45,86,0.10); padding: 16px; margin-bottom: 18px; }}
+        .status-pill {{ display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; margin-left: 8px; }}
+        .status-open {{ background: rgba(255, 193, 7, 0.16); color: #8A5A00; border: 1px solid rgba(255, 193, 7, 0.35); }}
+        .status-done {{ background: rgba(40, 167, 69, 0.14); color: #1D6A33; border: 1px solid rgba(40, 167, 69, 0.28); }}
+        .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
+        
         .block-container {{ padding-bottom: 120px !important; }}
         
-        /* 🌟 핵심 수정: "정확히 5칸을 가진 구역"만 골라서 하단에 고정시킵니다. (다른 버튼들은 안전합니다!) */
+        /* 🌟 정확히 5칸을 가진 구역만 네비게이션으로 인식하여 하단에 고정 */
         div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) {{
             display: flex !important;
             flex-direction: row !important;
@@ -196,13 +375,7 @@ else:
             justify-content: center;
         }}
 
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) div.stButton {{
-            width: 100% !important;
-            height: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }}
-
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) div.stButton {{ width: 100% !important; height: 100% !important; padding: 0 !important; margin: 0 !important; }}
         div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button {{
             background-color: transparent !important;
             border: none !important;
@@ -215,20 +388,13 @@ else:
             border-radius: 0 !important;
             {button_text_css}
         }}
-        
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button * {{
-            {button_text_css}
-        }}
-
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button:active {{
-            background-color: rgba(0, 0, 0, 0.1) !important;
-        }}
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button * {{ {button_text_css} }}
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button:active {{ background-color: rgba(0, 0, 0, 0.1) !important; }}
     </style>
     """, unsafe_allow_html=True)
 
     # 🌟 1) 홈 화면
     if choice == "홈":
-        # 우측 상단에 설정 및 로그아웃 버튼 배치 (3칸짜리 구역이므로 하단 네비게이션 CSS에 영향을 받지 않습니다)
         t_col1, t_col2, t_col3 = st.columns([7, 1.5, 1.5])
         with t_col2:
             if st.button("⚙️ 설정", use_container_width=True, key="top_setting"):
@@ -239,8 +405,18 @@ else:
                 st.session_state.nav_menu = "로그아웃"
                 st.rerun()
 
-        st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {st.session_state["user_name"]} 수사관님!</h2><p>원하시는 메뉴를 선택하세요.</p></div>', unsafe_allow_html=True)
-        
+        st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {escape_text(st.session_state["user_name"])} 수사관님!</h2><p>원하시는 메뉴를 선택하세요.</p></div>', unsafe_allow_html=True)
+
+        stat1, stat2, stat3, stat4 = st.columns(4)
+        c.execute("SELECT COUNT(*) AS cnt FROM org_chart_v2")
+        stat1.metric("연락망", c.fetchone()["cnt"])
+        c.execute("SELECT COUNT(*) AS cnt FROM country_info")
+        stat2.metric("국가정보", c.fetchone()["cnt"])
+        c.execute("SELECT COUNT(*) AS cnt FROM file_archive")
+        stat3.metric("자료실", c.fetchone()["cnt"])
+        c.execute("SELECT COUNT(*) AS cnt FROM qna")
+        stat4.metric("Q&A", c.fetchone()["cnt"])
+
         col1, col2 = st.columns(2)
         if col1.button("📊 연락망", use_container_width=True, key="h1"):
             st.session_state.nav_menu = "연락망"
@@ -248,7 +424,7 @@ else:
         if col2.button("🌍 국가별 공조 특징", use_container_width=True, key="h2"):
             st.session_state.nav_menu = "국가별지원"
             st.rerun()
-            
+
         col3, col4 = st.columns(2)
         if col3.button("📁 공조 자료실", use_container_width=True, key="h3"):
             st.session_state.nav_menu = "자료실"
@@ -257,8 +433,7 @@ else:
             st.session_state.nav_menu = "Q&A"
             st.rerun()
 
-        # 관리자 전용 데이터 관리 버튼
-        if st.session_state.get("user_id") == "admin":
+        if is_admin():
             st.markdown("<hr>", unsafe_allow_html=True)
             if st.button("⚙️ 데이터 관리 (관리자용)", use_container_width=True):
                 st.session_state.nav_menu = "데이터 관리"
@@ -266,213 +441,312 @@ else:
 
     # 🌟 2) 설정 화면 (개인정보 수정)
     elif choice == "설정":
-        st.markdown('<div class="glass-box"><h2>⚙️ 개인정보 설정</h2><p>내 정보를 수정할 수 있습니다.</p></div>', unsafe_allow_html=True)
-        
-        if st.session_state["user_id"] == "admin":
-            st.warning("⚠️ 관리자(admin) 계정은 보안상 이 페이지에서 정보를 수정할 수 없습니다.")
+        st.markdown('<div class="glass-box"><h2>⚙️ 개인정보 설정</h2><p>이름과 비밀번호를 수정할 수 있습니다.</p></div>', unsafe_allow_html=True)
+
+        if is_admin():
+            with st.form("admin_settings_form"):
+                current_pw = st.text_input("현재 관리자 비밀번호", type="password")
+                new_pw = st.text_input("새 관리자 비밀번호", type="password")
+                new_pw_confirm = st.text_input("새 관리자 비밀번호 확인", type="password")
+                if st.form_submit_button("관리자 비밀번호 변경", use_container_width=True):
+                    admin_hash = get_config("admin_password_hash", hash_password(INITIAL_ADMIN_PASSWORD))
+                    if not verify_password(current_pw, admin_hash):
+                        st.error("현재 비밀번호가 올바르지 않습니다.")
+                    elif len(new_pw.strip()) < 8:
+                        st.error("새 비밀번호는 최소 8자 이상이어야 합니다.")
+                    elif new_pw != new_pw_confirm:
+                        st.error("새 비밀번호가 일치하지 않습니다.")
+                    else:
+                        set_config("admin_password_hash", hash_password(new_pw.strip()))
+                        log_event(st.session_state["user_id"], "관리자 비밀번호 변경", "설정 화면에서 변경")
+                        st.success("관리자 비밀번호가 변경되었습니다.")
         else:
             c.execute('SELECT name, password FROM users WHERE username=?', (st.session_state["user_id"],))
             user_info = c.fetchone()
-            
             if user_info:
-                current_name = user_info[0]
-                current_pw = user_info[1]
-                
                 with st.form("settings_form"):
-                    edit_name = st.text_input("성명 (이름)", value=current_name)
-                    st.markdown("<small>비밀번호를 변경하지 않으려면 아래 칸을 비워두세요.</small>", unsafe_allow_html=True)
+                    edit_name = st.text_input("성명 (이름)", value=user_info["name"])
+                    old_pw = st.text_input("현재 비밀번호", type="password")
+                    st.markdown("<small>비밀번호를 바꾸지 않으려면 새 비밀번호 칸을 비워두세요.</small>", unsafe_allow_html=True)
                     edit_pw = st.text_input("새로운 비밀번호", type="password")
                     edit_pw_confirm = st.text_input("새로운 비밀번호 확인", type="password")
-                    
                     if st.form_submit_button("정보 수정 저장", use_container_width=True):
-                        new_pw = edit_pw if edit_pw.strip() != "" else current_pw
-                        
-                        if edit_pw.strip() != "" and edit_pw != edit_pw_confirm:
-                            st.error("새로운 비밀번호가 일치하지 않습니다.")
-                        elif edit_name.strip() == "":
+                        if not verify_password(old_pw, user_info["password"]):
+                            st.error("현재 비밀번호가 올바르지 않습니다.")
+                        elif not edit_name.strip():
                             st.error("성명을 입력해주세요.")
+                        elif edit_pw.strip() and len(edit_pw.strip()) < 8:
+                            st.error("새 비밀번호는 최소 8자 이상이어야 합니다.")
+                        elif edit_pw.strip() and edit_pw != edit_pw_confirm:
+                            st.error("새로운 비밀번호가 일치하지 않습니다.")
                         else:
-                            c.execute('UPDATE users SET name=?, password=? WHERE username=?', (edit_name, new_pw, st.session_state["user_id"]))
+                            new_pw_hash = hash_password(edit_pw.strip()) if edit_pw.strip() else user_info["password"]
+                            c.execute('UPDATE users SET name=?, password=? WHERE username=?', (edit_name.strip(), new_pw_hash, st.session_state["user_id"]))
                             conn.commit()
-                            st.session_state["user_name"] = edit_name 
+                            st.session_state["user_name"] = edit_name.strip()
+                            log_event(st.session_state["user_id"], "개인정보 수정", "이름/비밀번호 변경")
                             st.success("개인정보가 성공적으로 수정되었습니다.")
-                            
-    # 🌟 3) 연락망 및 대시보드 화면
+
+    # 🌟 3) 연락망 화면
     elif choice == "연락망":
         st.markdown('<div class="glass-box"><h2>📊 연락망 및 대시보드</h2></div>', unsafe_allow_html=True)
-        search = st.text_input("연락망 통합 검색", placeholder="국가, 성명, 구분 등 검색")
-        query = "SELECT id as 연번, country as 국가, affiliation as 소속, name as 성명, contact as 연락처, category as 구분, purpose as 관리목적, position as 직책, manager as 관리주체 FROM org_chart_v2"
-        if search: query += f" WHERE 국가 LIKE '%{search}%' OR 성명 LIKE '%{search}%' OR 소속 LIKE '%{search}%'"
-        df = pd.read_sql_query(query, conn)
+
+        countries = ["전체"] + fetch_distinct_values("org_chart_v2", "country")
+        categories = ["전체"] + fetch_distinct_values("org_chart_v2", "category")
+        managers = ["전체"] + fetch_distinct_values("org_chart_v2", "manager")
+
+        fcol1, fcol2, fcol3 = st.columns(3)
+        with fcol1: search = st.text_input("통합 검색", placeholder="검색어", key="contact_search")
+        with fcol2: affiliation_kw = st.text_input("소속 검색", placeholder="예: 인터폴", key="contact_affil")
+        with fcol3:
+            if st.button("필터 초기화", use_container_width=True):
+                st.rerun()
+
+        fcol4, fcol5, fcol6 = st.columns(3)
+        with fcol4: selected_country = st.selectbox("국가", countries)
+        with fcol5: selected_category = st.selectbox("구분", categories)
+        with fcol6: selected_manager = st.selectbox("관리주체", managers)
+
+        base_query = "SELECT id as 연번, country as 국가, affiliation as 소속, name as 성명, contact as 연락처, category as 구분, purpose as 관리목적, position as 직책, manager as 관리주체 FROM org_chart_v2"
+        where_clauses, params = [], []
+
+        if search.strip():
+            like_v = build_like_pattern(search)
+            where_clauses.append("(country LIKE ? OR name LIKE ? OR affiliation LIKE ? OR contact LIKE ? OR category LIKE ? OR purpose LIKE ? OR position LIKE ? OR manager LIKE ?)")
+            params.extend([like_v] * 8)
+        if affiliation_kw.strip():
+            where_clauses.append("affiliation LIKE ?")
+            params.append(build_like_pattern(affiliation_kw))
+        if selected_country != "전체":
+            where_clauses.append("country = ?")
+            params.append(selected_country)
+        if selected_category != "전체":
+            where_clauses.append("category = ?")
+            params.append(selected_category)
+        if selected_manager != "전체":
+            where_clauses.append("manager = ?")
+            params.append(selected_manager)
+
+        if where_clauses: base_query += " WHERE " + " AND ".join(where_clauses)
+        base_query += " ORDER BY country ASC, affiliation ASC, name ASC"
+
+        df = pd.read_sql_query(base_query, conn, params=params)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("검색 결과", len(df))
+        m2.metric("국가 수", int(df["국가"].nunique()) if not df.empty else 0)
+        m3.metric("관리주체 수", int(df["관리주체"].nunique()) if not df.empty else 0)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # 🌟 4) 국가별 공조 특징 화면
+        if not df.empty:
+            out = io.BytesIO()
+            with pd.ExcelWriter(out, engine='openpyxl') as writer: df.to_excel(writer, index=False, sheet_name='연락망검색결과')
+            st.download_button("📥 검색 결과 엑셀 다운로드", data=out.getvalue(), file_name=f"연락망_검색_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            
+        if is_admin() and not df.empty:
+            st.divider()
+            contact_options = [f"{int(row['연번'])} | {row['국가']} | {row['성명']} | {row['소속']}" for _, row in df.iterrows()]
+            selected_label = st.selectbox("🛠️ 수정/삭제할 항목 선택", contact_options)
+            selected_id = int(selected_label.split("|")[0].strip())
+            c.execute("SELECT * FROM org_chart_v2 WHERE id=?", (selected_id,))
+            target = c.fetchone()
+            if target:
+                with st.form(f"edit_{selected_id}"):
+                    col1, col2 = st.columns(2)
+                    e1 = col1.text_input("국가", value=target["country"] or "")
+                    e2 = col1.text_input("소속", value=target["affiliation"] or "")
+                    e3 = col1.text_input("성명", value=target["name"] or "")
+                    e4 = col1.text_input("연락처", value=target["contact"] or "")
+                    e5 = col2.text_input("구분", value=target["category"] or "")
+                    e6 = col2.text_input("관리목적", value=target["purpose"] or "")
+                    e7 = col2.text_input("직책", value=target["position"] or "")
+                    e8 = col2.text_input("관리주체", value=target["manager"] or "")
+                    if st.form_submit_button("수정 저장", use_container_width=True):
+                        c.execute("UPDATE org_chart_v2 SET country=?, affiliation=?, name=?, contact=?, category=?, purpose=?, position=?, manager=? WHERE id=?", (e1, e2, e3, e4, e5, e6, e7, e8, selected_id))
+                        conn.commit()
+                        st.success("수정되었습니다.")
+                        st.rerun()
+
+                if st.button("🗑️ 선택한 연락망 삭제", use_container_width=True):
+                    c.execute("DELETE FROM org_chart_v2 WHERE id=?", (selected_id,))
+                    conn.commit()
+                    st.success("삭제되었습니다.")
+                    st.rerun()
+
+    # 🌟 4) 국가별 공조 특징
     elif choice == "국가별지원":
         st.markdown('<div class="glass-box"><h2>🌍 국가별 공조 특징</h2></div>', unsafe_allow_html=True)
-        c.execute("SELECT country_name FROM country_info")
+        c.execute("SELECT country_name FROM country_info ORDER BY country_name ASC")
         countries = [r[0] for r in c.fetchall()]
         if countries:
             sel = st.selectbox("국가 선택", countries)
             c.execute("SELECT * FROM country_info WHERE country_name=?", (sel,))
             info = c.fetchone()
-            for title, content in [("📌 공조 특징", info[1]), ("📞 연락·문의처", info[3]), ("💡 공조 팁", info[4])]:
-                st.markdown(f'<div class="glass-box"><h4>{title}</h4>{str(content).replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
+            if info:
+                for title, content in [("📌 공조 특징", info["features"]), ("📞 연락·문의처", info["contacts"]), ("💡 공조 팁", info["tips"])]:
+                    st.markdown(f'<div class="glass-box"><h4>{title}</h4>{escape_text_with_br(content)}</div>', unsafe_allow_html=True)
+        else:
+            st.info("등록된 국가 정보가 없습니다.")
 
-    # 🌟 5) 공조 자료실 화면
+    # 🌟 5) 자료실
     elif choice == "자료실":
         st.markdown('<div class="glass-box"><h2>📁 팀 공용 자료실</h2></div>', unsafe_allow_html=True)
-        with st.expander("파일 업로드"):
-            up_file = st.file_uploader("파일 선택", type=['hwp', 'hwpx', 'pdf', 'docx', 'jpg', 'png'])
-            if st.button("저장") and up_file:
-                with open(UPLOAD_DIR / up_file.name, "wb") as f: f.write(up_file.getbuffer())
-                c.execute("INSERT INTO file_archive (filename, filepath, upload_date) VALUES (?,?,?)", (up_file.name, up_file.name, datetime.now().strftime("%Y-%m-%d %H:%M")))
-                conn.commit(); st.rerun()
-        
-        c.execute("SELECT id, filename, upload_date FROM file_archive")
-        for fid, fname, fdate in c.fetchall():
-            full_path = UPLOAD_DIR / fname
-            st.markdown(f'<div class="glass-box" style="margin-bottom: 5px;"><b>{fname}</b> ({fdate})</div>', unsafe_allow_html=True)
-            if full_path.exists():
-                with open(full_path, "rb") as f: 
-                    st.download_button("⬇️ 다운로드", f, file_name=fname, key=f"dl_{fid}")
-            else:
-                st.error("⚠️ 서버 초기화로 인해 실제 파일이 유실되었습니다.")
-                if st.button("🗑️ 이 기록 삭제", key=f"del_err_{fid}"):
-                    c.execute("DELETE FROM file_archive WHERE id=?", (fid,))
-                    conn.commit()
-                    st.rerun()
 
-    # 🌟 6) Q&A 화면
+        with st.expander("파일 업로드"):
+            up_file = st.file_uploader("파일 선택", type=ALLOWED_FILE_TYPES)
+            if st.button("저장") and up_file:
+                original_name = Path(up_file.name).name
+                if Path(original_name).suffix.lower().replace(".", "") in ALLOWED_FILE_TYPES:
+                    storage_name = make_storage_name(original_name)
+                    with open(UPLOAD_DIR / storage_name, "wb") as f: f.write(up_file.getbuffer())
+                    c.execute("INSERT INTO file_archive (filename, filepath, upload_date, uploader) VALUES (?,?,?,?)", (original_name, storage_name, datetime.now().strftime("%Y-%m-%d %H:%M"), st.session_state["user_name"]))
+                    conn.commit()
+                    st.success("저장되었습니다.")
+                    st.rerun()
+                else: st.error("허용되지 않은 형식입니다.")
+
+        c.execute("SELECT * FROM file_archive ORDER BY id DESC")
+        files = c.fetchall()
+        for row in files:
+            full_path = UPLOAD_DIR / (row["filepath"] or row["filename"])
+            st.markdown(f"""
+            <div class="file-card">
+                <div style="font-weight:700;">📄 {escape_text(row['filename'])}</div>
+                <div class="file-meta">업로드: {escape_text(row['upload_date'])} | 업로더: {escape_text(row['uploader'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            a1, a2, a3 = st.columns([1.1, 1.1, 1])
+            with a1:
+                if full_path.exists():
+                    with open(full_path, "rb") as f: st.download_button("⬇️ 다운로드", f, file_name=row["filename"], key=f"dl_{row['id']}", use_container_width=True)
+                else: st.error("서버에 파일이 없습니다.")
+            with a2:
+                if get_file_kind(row["filename"]) in {"이미지", "PDF"} and full_path.exists():
+                    if st.toggle("미리보기", key=f"pv_{row['id']}"):
+                        ext = get_file_ext(row["filename"])
+                        if ext in {"jpg", "jpeg", "png", "gif", "bmp", "webp"}: st.image(str(full_path))
+                        elif ext == "pdf": st.markdown(f'<iframe src="data:application/pdf;base64,{base64.b64encode(full_path.read_bytes()).decode("utf-8")}" width="100%" height="720"></iframe>', unsafe_allow_html=True)
+            with a3:
+                if is_admin():
+                    if st.button("🗑️ 삭제", key=f"del_{row['id']}", use_container_width=True):
+                        if full_path.exists(): full_path.unlink(missing_ok=True)
+                        c.execute("DELETE FROM file_archive WHERE id=?", (row["id"],))
+                        conn.commit()
+                        st.rerun()
+
+    # 🌟 6) Q&A
     elif choice == "Q&A":
-        st.markdown('<div class="glass-box"><h2>💬 Q&A 게시판</h2><p>업무 중 궁금한 사항을 자유롭게 남겨주세요.</p></div>', unsafe_allow_html=True)
-        
+        st.markdown('<div class="glass-box"><h2>💬 Q&A 게시판</h2></div>', unsafe_allow_html=True)
+
         with st.form("qna_form"):
             new_question = st.text_area("질문 내용", placeholder="질문을 입력하세요...")
             if st.form_submit_button("질문 등록", use_container_width=True):
-                if new_question:
-                    c.execute("INSERT INTO qna (author, question, date) VALUES (?, ?, ?)", 
-                              (st.session_state["user_name"], new_question, datetime.now().strftime("%Y-%m-%d %H:%M")))
+                if new_question.strip():
+                    c.execute("INSERT INTO qna (author, question, date) VALUES (?, ?, ?)", (st.session_state["user_name"], new_question.strip(), datetime.now().strftime("%Y-%m-%d %H:%M")))
                     conn.commit()
-                    st.success("질문이 등록되었습니다.")
+                    st.success("등록되었습니다.")
                     st.rerun()
-        
-        st.markdown("### 📌 등록된 질문 목록")
-        c.execute("SELECT id, author, question, date FROM qna ORDER BY id DESC")
-        qna_data = c.fetchall()
-        
-        if not qna_data:
-            st.info("아직 등록된 질문이 없습니다.")
-        else:
-            for qid, qauthor, qtext, qdate in qna_data:
-                st.markdown(f'''
-                <div class="glass-box" style="margin-bottom: 10px;">
-                    <div style="font-size: 0.9em; color: gray;">🗣️ {qauthor} 수사관 | 🕒 {qdate}</div>
-                    <div style="margin-top: 10px; font-weight: bold;">{str(qtext).replace(chr(10), "<br>")}</div>
-                </div>
-                ''', unsafe_allow_html=True)
 
-    # 🌟 7) 데이터 관리 (관리자 전용 기능)
+        c.execute("""
+            SELECT q.id, q.author, q.question, q.date, COALESCE(cc.comment_count, 0) AS comment_count,
+                   CASE WHEN COALESCE(ac.answer_count, 0) > 0 THEN '답변완료' ELSE '미답변' END AS status
+            FROM qna q
+            LEFT JOIN (SELECT qna_id, COUNT(*) AS comment_count FROM qna_comments GROUP BY qna_id) cc ON cc.qna_id = q.id
+            LEFT JOIN (SELECT qna_id, COUNT(*) AS answer_count FROM qna_comments WHERE comment_type='answer' GROUP BY qna_id) ac ON ac.qna_id = q.id
+            ORDER BY q.id DESC
+        """)
+        for qrow in c.fetchall():
+            status_class = get_qna_status_class(qrow["status"])
+            st.markdown(f"""
+            <div class="question-wrap">
+                <div class="comment-meta">🗣️ {escape_text(qrow['author'])} | 🕒 {escape_text(qrow['date'])} | 💬 {qrow['comment_count']}개 <span class="status-pill {status_class}">{escape_text(qrow['status'])}</span></div>
+                <div style="font-weight:700;">{escape_text_with_br(qrow['question'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            c.execute("SELECT * FROM qna_comments WHERE qna_id=? ORDER BY id ASC", (qrow["id"],))
+            for crow in c.fetchall():
+                comment_class = "answer-card" if crow["comment_type"] == "answer" else "comment-card"
+                st.markdown(f"""<div class="{comment_class}"><div class="comment-meta">{"✅ 답변" if crow['comment_type']=="answer" else "💬 댓글"} | {escape_text(crow['author'])} | {escape_text(crow['date'])}</div><div>{escape_text_with_br(crow['comment'])}</div></div>""", unsafe_allow_html=True)
+                if is_admin() or crow["author"] == st.session_state["user_name"]:
+                    if st.button("삭제", key=f"cdel_{crow['id']}"):
+                        c.execute("DELETE FROM qna_comments WHERE id=?", (crow["id"],)); conn.commit(); st.rerun()
+
+            with st.form(f"cform_{qrow['id']}"):
+                comment_text = st.text_area("답변 또는 댓글 작성")
+                is_answer = st.checkbox("공식 답변으로 등록") if is_admin() else False
+                if st.form_submit_button("등록", use_container_width=True) and comment_text.strip():
+                    c.execute("INSERT INTO qna_comments (qna_id, author, comment, date, comment_type) VALUES (?, ?, ?, ?, ?)", (qrow["id"], st.session_state["user_name"], comment_text.strip(), datetime.now().strftime("%Y-%m-%d %H:%M"), "answer" if is_answer else "comment"))
+                    conn.commit()
+                    st.rerun()
+            
+            if is_admin() or qrow["author"] == st.session_state["user_name"]:
+                if st.button("이 질문 전체 삭제", key=f"qdel_{qrow['id']}"):
+                    c.execute("DELETE FROM qna_comments WHERE qna_id=?", (qrow["id"],)); c.execute("DELETE FROM qna WHERE id=?", (qrow["id"],)); conn.commit(); st.rerun()
+
+    # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
-        if st.session_state.get("user_id") != "admin": st.error("권한이 없습니다."); st.stop()
-        tab1, tab2, tab3 = st.tabs(["👤 연락망 관리", "🌍 국가정보 관리", "👥 사용자 관리"])
-        
+        require_admin_route()
+        tab1, tab2, tab3, tab4 = st.tabs(["👤 연락망", "🌍 국가정보", "👥 사용자", "🕘 로그"])
+
         with tab1:
-            st.subheader("📥 데이터 내보내기")
+            st.subheader("📥 엑셀 내보내기/업로드")
             c.execute("SELECT country, affiliation, name, contact, category, purpose, position, manager FROM org_chart_v2")
             all_data = c.fetchall()
             if all_data:
                 df_download = pd.DataFrame(all_data, columns=['국가', '소속', '성명', '연락처', '구분', '관리목적', '직책', '관리주체'])
                 df_download.insert(0, '연번', range(1, len(df_download) + 1))
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_download.to_excel(writer, index=False, sheet_name='연락망')
-                processed_data = output.getvalue()
-                st.download_button(label="📥 현재 명단 엑셀 다운로드 (.xlsx)", data=processed_data, file_name=f"인터폴팀_연락망_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-
-            st.divider()
-            st.subheader("📤 엑셀 일괄 업로드")
-            upload_option = st.radio("업로드 방식을 선택하세요:", ["🚨 전체 덮어쓰기 (위험: 기존 개별 입력 데이터 모두 삭제됨)", "➕ 기존 데이터 아래에 추가하기 (기존 데이터 유지)"])
-            uploaded_file = st.file_uploader("엑셀 파일 선택", type=['xlsx'])
+                out = io.BytesIO()
+                with pd.ExcelWriter(out, engine='openpyxl') as writer: df_download.to_excel(writer, index=False, sheet_name='연락망')
+                st.download_button("📥 엑셀 다운로드", data=out.getvalue(), file_name=f"연락망_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-            if uploaded_file and st.button("파일 적용하기", use_container_width=True):
-                df_excel = pd.read_excel(uploaded_file).fillna("")
-                if "덮어쓰기" in upload_option:
-                    c.execute('DELETE FROM org_chart_v2')
-                for _, row in df_excel.iterrows():
-                    c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', 
-                              (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
-                conn.commit()
-                st.success("데이터베이스 반영이 완료되었습니다!")
-                st.rerun()
-
-            st.divider()
-            st.subheader("✍️ 개별 관리")
-            with st.form("new"):
-                col1, col2 = st.columns(2)
-                i1, i2, i3, i4 = col1.text_input("국가"), col1.text_input("소속"), col1.text_input("성명"), col1.text_input("연락처")
-                i5, i6, i7, i8 = col2.text_input("구분"), col2.text_input("관리목적"), col2.text_input("직책"), col2.text_input("관리주체")
-                if st.form_submit_button("저장"):
-                    c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', (i1, i2, i3, i4, i5, i6, i7, i8))
-                    conn.commit(); st.rerun()
+            upload_option = st.radio("업로드 방식:", ["🚨 전체 덮어쓰기 (기존 삭제)", "➕ 기존 데이터에 추가"])
+            uploaded_file = st.file_uploader("엑셀 파일 선택", type=['xlsx'])
+            if uploaded_file and st.button("적용하기", use_container_width=True):
+                df_ex = pd.read_excel(uploaded_file).fillna("")
+                if "덮어쓰기" in upload_option: c.execute('DELETE FROM org_chart_v2')
+                for _, row in df_ex.iterrows(): c.execute('INSERT INTO org_chart_v2 (country, affiliation, name, contact, category, purpose, position, manager) VALUES (?,?,?,?,?,?,?,?)', (str(row.iloc[1]), str(row.iloc[2]), str(row.iloc[3]), str(row.iloc[4]), str(row.iloc[5]), str(row.iloc[6]), str(row.iloc[7]), str(row.iloc[8])))
+                conn.commit(); st.success("반영 완료!"); st.rerun()
 
         with tab2:
-            st.subheader("🌍 국가정보 등록 및 수정")
             c.execute("SELECT country_name FROM country_info ORDER BY country_name ASC")
-            existing_countries = [r[0] for r in c.fetchall()]
-            edit_choice = st.selectbox("수정할 국가 선택 (새로 추가하려면 '--- 신규 추가 ---' 선택)", ["--- 신규 추가 ---"] + existing_countries)
-            
-            default_name, default_feat, default_cont, default_tips, hidden_treaty = "", "", "", "", ""
+            edit_choice = st.selectbox("국가 선택", ["--- 신규 추가 ---"] + [r["country_name"] for r in c.fetchall()])
+            target = {"country_name": "", "features": "", "contacts": "", "tips": ""}
             if edit_choice != "--- 신규 추가 ---":
                 c.execute("SELECT * FROM country_info WHERE country_name = ?", (edit_choice,))
-                target_data = c.fetchone()
-                if target_data:
-                    default_name, default_feat, hidden_treaty, default_cont, default_tips = target_data[0], target_data[1], target_data[2], target_data[3], target_data[4]
-
+                target = c.fetchone()
             with st.form("country_form"):
-                cn = st.text_input("국가명", value=default_name)
-                cf = st.text_area("공조 특징", value=default_feat)
-                cc = st.text_area("주요 연락·문의 창구", value=default_cont)
-                cp = st.text_area("실무 업무 팁 및 주의사항", value=default_tips)
-                submit_label = "정보 수정 저장" if edit_choice != "--- 신규 추가 ---" else "신규 정보 저장"
-                
-                if st.form_submit_button(submit_label):
-                    if cn.strip() == "":
-                        st.error("국가명을 입력해주세요.")
-                    else:
-                        c.execute('INSERT OR REPLACE INTO country_info VALUES (?,?,?,?,?)', (cn, cf, hidden_treaty, cc, cp))
-                        conn.commit()
-                        st.success(f"{cn} 정보가 저장되었습니다.")
-                        st.rerun()
+                cn = st.text_input("국가명", value=target["country_name"])
+                cf = st.text_area("공조 특징", value=target["features"])
+                cc = st.text_area("연락처", value=target["contacts"])
+                cp = st.text_area("팁", value=target["tips"])
+                if st.form_submit_button("저장") and cn.strip():
+                    c.execute('INSERT OR REPLACE INTO country_info VALUES (?,?,?,?,?)', (cn.strip(), cf, "", cc, cp))
+                    conn.commit(); st.success("저장되었습니다."); st.rerun()
 
         with tab3:
-            c.execute('SELECT username, name, department, status FROM users WHERE username != "admin"')
-            for u_id, u_name, u_dept, u_status in c.fetchall():
-                with st.expander(f"{u_name} ({u_id}) [{u_status}]"):
-                    col1, col2, col3 = st.columns(3)
-                    if u_status == "pending":
-                        if col1.button("승인", key=f"a_{u_id}"): c.execute('UPDATE users SET status="approved" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
-                    else:
-                        if col1.button("회수", key=f"r_{u_id}"): c.execute('UPDATE users SET status="pending" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
-                    if col2.button("초기화", key=f"p_{u_id}"): c.execute('UPDATE users SET password="password123!" WHERE username=?', (u_id,)); conn.commit(); st.warning("password123!")
-                    if col3.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
+            c.execute('SELECT username, name, department, status, role FROM users WHERE username != ? ORDER BY username ASC', (ADMIN_USERNAME,))
+            for row in c.fetchall():
+                u_id = row["username"]
+                with st.expander(f"{escape_text(row['name'])} ({escape_text(u_id)}) [{escape_text(row['status'])}]"):
+                    col1, col2 = st.columns(2)
+                    if row["status"] == "pending" and col1.button("승인", key=f"a_{u_id}"): c.execute('UPDATE users SET status="approved" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
+                    elif row["status"] == "approved" and col1.button("승인회수", key=f"r_{u_id}"): c.execute('UPDATE users SET status="pending" WHERE username=?', (u_id,)); conn.commit(); st.rerun()
+                    if col2.button("삭제", key=f"d_{u_id}"): c.execute('DELETE FROM users WHERE username=?', (u_id,)); conn.commit(); st.rerun()
 
-    # ----------------- [하단 네비게이션 바] -----------------
-    # 이 구역은 "정확히 5칸"이므로 하단 고정 CSS가 정상적으로 적용됩니다!
+        with tab4:
+            st.subheader("🕘 최근 접속 및 주요 작업 로그")
+            c.execute("SELECT created_at as 시각, username as 사용자, action as 동작, detail as 상세 FROM audit_log ORDER BY id DESC LIMIT 300")
+            log_rows = c.fetchall()
+            if log_rows:
+                df_logs = pd.DataFrame(log_rows, columns=["시각", "사용자", "동작", "상세"])
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)
+
+    # ----------------- [하단 네비게이션 바 고정 (SPA 전환 유지)] -----------------
     nav1, nav2, nav3, nav4, nav5 = st.columns(5)
+    if nav1.button("연락망", use_container_width=True, key="b1"): st.session_state.nav_menu = "연락망"; st.rerun()
+    if nav2.button("국가별지원", use_container_width=True, key="b2"): st.session_state.nav_menu = "국가별지원"; st.rerun()
+    if nav3.button("홈", use_container_width=True, key="b3"): st.session_state.nav_menu = "홈"; st.rerun()
+    if nav4.button("자료실", use_container_width=True, key="b4"): st.session_state.nav_menu = "자료실"; st.rerun()
+    if nav5.button("Q&A", use_container_width=True, key="b5"): st.session_state.nav_menu = "Q&A"; st.rerun()
     
-    if nav1.button("연락망", use_container_width=True, key="b1"):
-        st.session_state.nav_menu = "연락망"
-        st.rerun()
-    if nav2.button("국가별지원", use_container_width=True, key="b2"):
-        st.session_state.nav_menu = "국가별지원"
-        st.rerun()
-    if nav3.button("홈", use_container_width=True, key="b3"):
-        st.session_state.nav_menu = "홈"
-        st.rerun()
-    if nav4.button("자료실", use_container_width=True, key="b4"):
-        st.session_state.nav_menu = "자료실"
-        st.rerun()
-    if nav5.button("Q&A", use_container_width=True, key="b5"):
-        st.session_state.nav_menu = "Q&A"
-        st.rerun()
-        
