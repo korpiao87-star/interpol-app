@@ -567,27 +567,59 @@ else:
                         conn.commit()
                         st.rerun()
 
-    # 🌟 6) 지식 네트워크 (Obsidian 이식)
+# 🌟 6) 지식 네트워크 (웹 뷰어로 변경)
     elif choice == "지식네트워크":
-        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 (Obsidian)</h2><p>사건 분석, 지식 연결, 복잡한 데이터 정리는 옵시디언을 활용합니다.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 (자료람)</h2><p>구글 드라이브와 연동되어 팀원 누구나 실시간으로 옵시디언 자료를 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
-        st.info("💡 모바일에서 이용 시 옵시디언(Obsidian) 앱이 설치되어 있어야 하며, 공유 폴더가 동기화된 상태여야 합니다.")
-        
-        # 딥링크 버튼
-        obsidian_url = "obsidian://open?vault=Interpol_Vault"
-        st.markdown(f"""
-            <a href="{obsidian_url}" target="_blank" style="text-decoration: none;">
-                <div style="background-color: #7b61ff; color: white; text-align: center; padding: 25px; border-radius: 15px; font-size: 20px; font-weight: bold; box-shadow: 0 4px 15px rgba(123,97,255,0.4);">
-                    🟣 옵시디언 앱 실행 및 지식망 연결
-                </div>
-            </a>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("❓ 이용 가이드"):
-            st.write("1. **처음 사용:** 휴대폰 앱스토어에서 Obsidian 앱을 먼저 설치하세요.")
-            st.write("2. **폴더 동기화:** Remotely Save 또는 Obsidian Sync를 통해 'Interpol_Vault' 폴더를 동기화하세요.")
-            st.write("3. **연결성:** 문서 본문에 `[[문서제목]]`을 입력하여 사건과 인물을 연결하세요.")
+        # 🚨 중요: 아래 변수에 본인의 구글 드라이브 'Interpol(Seoul)' 폴더 ID를 적으세요!
+        # 폴더 ID는 구글 드라이브 웹에서 해당 폴더를 열었을 때 인터넷 주소창의 가장 뒷부분입니다.
+        # 예: https://drive.google.com/drive/folders/1A2b3C4d5E6f7G8h9I0j
+        FOLDER_ID = "여기에_폴더_ID를_붙여넣으세요"
+
+        # 드라이브에서 마크다운(.md) 파일 목록 가져오기
+        def get_markdown_files(folder_id):
+            try:
+                # trashed = false 조건으로 휴지통에 있는 파일은 제외합니다.
+                query = f"'{folder_id}' in parents and mimeType = 'text/markdown' and trashed = false"
+                results = service.files().list(q=query, fields="files(id, name)").execute()
+                return results.get('files', [])
+            except Exception as e:
+                st.error("구글 드라이브 폴더를 찾을 수 없거나 권한이 없습니다.")
+                return []
+
+        # 특정 파일의 내용(텍스트) 가져오기
+        def read_file_content(file_id):
+            try:
+                content = service.files().get_media(fileId=file_id).execute()
+                return content.decode('utf-8')
+            except Exception as e:
+                return f"파일을 읽어오는 중 오류가 발생했습니다: {e}"
+
+        if FOLDER_ID == "https://drive.google.com/drive/folders/1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM":
+            st.warning("⚠️ 개발자 안내: 코드 내에 구글 드라이브 폴더 ID를 먼저 입력해주세요.")
+        else:
+            files = get_markdown_files(FOLDER_ID)
+
+            if files:
+                # 파일 확장자(.md)를 떼고 깔끔한 이름으로 리스트 생성
+                file_names = [f['name'].replace('.md', '') for f in files]
+                
+                # 사용자가 읽을 문서를 선택할 수 있는 박스
+                selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+
+                if selected_name != "--- 문서를 선택하세요 ---":
+                    # 선택한 파일의 실제 ID를 찾아서 내용을 불러옴
+                    selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
+                    
+                    with st.spinner('문서를 불러오는 중입니다...'):
+                        content = read_file_content(selected_file['id'])
+
+                    # 내용을 화면에 출력
+                    st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
+                    st.markdown(content) # 옵시디언의 마크다운 문법을 화면에 예쁘게 그려줍니다.
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("해당 구글 드라이브 폴더에 작성된 마크다운(.md) 파일이 없습니다. (서비스 계정에 폴더가 공유되었는지 확인해주세요)")
 
     # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
@@ -648,5 +680,4 @@ else:
             log_rows = c.fetchall()
             if log_rows:
                 df_logs = pd.DataFrame(log_rows, columns=["시각", "사용자", "동작", "상세"])
-                st.dataframe(df_logs, use_container_width=True, hide_index=True)
-                
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)                
