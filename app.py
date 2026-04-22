@@ -321,7 +321,7 @@ else:
         if st.button("📊 연락망", use_container_width=True): st.session_state.nav_menu = "연락망"; st.rerun()
         if st.button("🌍 국가별 공조 특징", use_container_width=True): st.session_state.nav_menu = "국가별지원"; st.rerun()
         if st.button("📁 팀 공용 자료실", use_container_width=True): st.session_state.nav_menu = "자료실"; st.rerun()
-        if st.button("💬 Q&A 게시판", use_container_width=True): st.session_state.nav_menu = "Q&A"; st.rerun()
+        if st.button("🧠 지식 네트워크 (Obsidian)", use_container_width=True): st.session_state.nav_menu = "지식네트워크"; st.rerun()
         
         if is_admin():
             st.divider()
@@ -365,8 +365,7 @@ else:
         stat2.metric("국가정보", c.fetchone()["cnt"])
         c.execute("SELECT COUNT(*) AS cnt FROM file_archive")
         stat3.metric("자료실", c.fetchone()["cnt"])
-        c.execute("SELECT COUNT(*) AS cnt FROM qna")
-        stat4.metric("Q&A", c.fetchone()["cnt"])
+        stat4.metric("지식망", "연결됨")
 
         col1, col2 = st.columns(2)
         if col1.button("📊 연락망", use_container_width=True, key="h1"):
@@ -380,8 +379,8 @@ else:
         if col3.button("📁 공조 자료실", use_container_width=True, key="h3"):
             st.session_state.nav_menu = "자료실"
             st.rerun()
-        if col4.button("💬 Q&A", use_container_width=True, key="h4"):
-            st.session_state.nav_menu = "Q&A"
+        if col4.button("🧠 지식 네트워크", use_container_width=True, key="h4"):
+            st.session_state.nav_menu = "지식네트워크"
             st.rerun()
 
     # 🌟 2) 설정 화면 (개인정보 수정)
@@ -556,55 +555,27 @@ else:
                         conn.commit()
                         st.rerun()
 
-    # 🌟 6) Q&A
-    elif choice == "Q&A":
-        st.markdown('<div class="glass-box"><h2>💬 Q&A 게시판</h2></div>', unsafe_allow_html=True)
-
-        with st.form("qna_form"):
-            new_question = st.text_area("질문 내용", placeholder="질문을 입력하세요...")
-            if st.form_submit_button("질문 등록", use_container_width=True):
-                if new_question.strip():
-                    c.execute("INSERT INTO qna (author, question, date) VALUES (?, ?, ?)", (st.session_state["user_name"], new_question.strip(), datetime.now().strftime("%Y-%m-%d %H:%M")))
-                    conn.commit()
-                    st.success("등록되었습니다.")
-                    st.rerun()
-
-        c.execute("""
-            SELECT q.id, q.author, q.question, q.date, COALESCE(cc.comment_count, 0) AS comment_count,
-                   CASE WHEN COALESCE(ac.answer_count, 0) > 0 THEN '답변완료' ELSE '미답변' END AS status
-            FROM qna q
-            LEFT JOIN (SELECT qna_id, COUNT(*) AS comment_count FROM qna_comments GROUP BY qna_id) cc ON cc.qna_id = q.id
-            LEFT JOIN (SELECT qna_id, COUNT(*) AS answer_count FROM qna_comments WHERE comment_type='answer' GROUP BY qna_id) ac ON ac.qna_id = q.id
-            ORDER BY q.id DESC
-        """)
-        for qrow in c.fetchall():
-            status_class = get_qna_status_class(qrow["status"])
-            st.markdown(f"""
-            <div class="question-wrap">
-                <div class="comment-meta">🗣️ {escape_text(qrow['author'])} | 🕒 {escape_text(qrow['date'])} | 💬 {qrow['comment_count']}개 <span class="status-pill {status_class}">{escape_text(qrow['status'])}</span></div>
-                <div style="font-weight:700;">{escape_text_with_br(qrow['question'])}</div>
-            </div>
+    # 🌟 6) 지식 네트워크 (Obsidian 이식)
+    elif choice == "지식네트워크":
+        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 (Obsidian)</h2><p>사건 분석, 지식 연결, 복잡한 데이터 정리는 옵시디언을 활용합니다.</p></div>', unsafe_allow_html=True)
+        
+        st.info("💡 모바일에서 이용 시 옵시디언(Obsidian) 앱이 설치되어 있어야 하며, 공유 폴더가 동기화된 상태여야 합니다.")
+        
+        # 딥링크 버튼
+        obsidian_url = "obsidian://open?vault=Interpol_Vault"
+        st.markdown(f"""
+            <a href="{obsidian_url}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #7b61ff; color: white; text-align: center; padding: 25px; border-radius: 15px; font-size: 20px; font-weight: bold; box-shadow: 0 4px 15px rgba(123,97,255,0.4);">
+                    🟣 옵시디언 앱 실행 및 지식망 연결
+                </div>
+            </a>
             """, unsafe_allow_html=True)
-            
-            c.execute("SELECT * FROM qna_comments WHERE qna_id=? ORDER BY id ASC", (qrow["id"],))
-            for crow in c.fetchall():
-                comment_class = "answer-card" if crow["comment_type"] == "answer" else "comment-card"
-                st.markdown(f"""<div class="{comment_class}"><div class="comment-meta">{"✅ 답변" if crow['comment_type']=="answer" else "💬 댓글"} | {escape_text(crow['author'])} | {escape_text(crow['date'])}</div><div>{escape_text_with_br(crow['comment'])}</div></div>""", unsafe_allow_html=True)
-                if is_admin() or crow["author"] == st.session_state["user_name"]:
-                    if st.button("삭제", key=f"cdel_{crow['id']}"):
-                        c.execute("DELETE FROM qna_comments WHERE id=?", (crow["id"],)); conn.commit(); st.rerun()
-
-            with st.form(f"cform_{qrow['id']}"):
-                comment_text = st.text_area("답변 또는 댓글 작성")
-                is_answer = st.checkbox("공식 답변으로 등록") if is_admin() else False
-                if st.form_submit_button("등록", use_container_width=True) and comment_text.strip():
-                    c.execute("INSERT INTO qna_comments (qna_id, author, comment, date, comment_type) VALUES (?, ?, ?, ?, ?)", (qrow["id"], st.session_state["user_name"], comment_text.strip(), datetime.now().strftime("%Y-%m-%d %H:%M"), "answer" if is_answer else "comment"))
-                    conn.commit()
-                    st.rerun()
-            
-            if is_admin() or qrow["author"] == st.session_state["user_name"]:
-                if st.button("이 질문 전체 삭제", key=f"qdel_{qrow['id']}"):
-                    c.execute("DELETE FROM qna_comments WHERE qna_id=?", (qrow["id"],)); c.execute("DELETE FROM qna WHERE id=?", (qrow["id"],)); conn.commit(); st.rerun()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("❓ 이용 가이드"):
+            st.write("1. **처음 사용:** 휴대폰 앱스토어에서 Obsidian 앱을 먼저 설치하세요.")
+            st.write("2. **폴더 동기화:** Remotely Save 또는 Obsidian Sync를 통해 'Interpol_Vault' 폴더를 동기화하세요.")
+            st.write("3. **연결성:** 문서 본문에 `[[문서제목]]`을 입력하여 사건과 인물을 연결하세요.")
 
     # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
