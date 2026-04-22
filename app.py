@@ -1,4 +1,16 @@
 import streamlit as st
+import json  # 이 줄을 추가해야 합니다!
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
+# Secrets에 저장된 텍스트 블록을 파이썬이 이해할 수 있게(JSON) 변환해서 읽기
+key_dict = json.loads(st.secrets["gcp_service_account"])
+creds = service_account.Credentials.from_service_account_info(key_dict)
+
+# 구글 드라이브 연결
+service = build('drive', 'v3', credentials=creds)
+
+# --- (이 아래로는 기존에 작업하시던 파일 읽어오기 코드 등을 그대로 쓰시면 됩니다) ---
 import sqlite3
 import pandas as pd
 import os
