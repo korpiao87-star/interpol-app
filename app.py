@@ -1,5 +1,5 @@
 import streamlit as st
-import json  # 이 줄을 추가해야 합니다!
+import json 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -569,12 +569,12 @@ else:
 
 # 🌟 6) 지식 네트워크 (웹 뷰어로 변경)
     elif choice == "지식네트워크":
-        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 (자료람)</h2><p>구글 드라이브와 연동되어 팀원 누구나 실시간으로 옵시디언 자료를 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크</h2><p>구글 드라이브와 연동되어 팀원 누구나 실시간으로 옵시디언 자료를 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
         # 🚨 중요: 아래 변수에 본인의 구글 드라이브 'Interpol(Seoul)' 폴더 ID를 적으세요!
         # 폴더 ID는 구글 드라이브 웹에서 해당 폴더를 열었을 때 인터넷 주소창의 가장 뒷부분입니다.
         # 예: https://drive.google.com/drive/folders/1A2b3C4d5E6f7G8h9I0j
-        FOLDER_ID = "여기에_폴더_ID를_붙여넣으세요"
+        FOLDER_ID = "https://drive.google.com/drive/folders/1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
 
         # 드라이브에서 마크다운(.md) 파일 목록 가져오기
         def get_markdown_files(folder_id):
