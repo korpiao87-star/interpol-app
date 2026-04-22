@@ -134,7 +134,7 @@ def column_exists(table_name: str, column_name: str) -> bool:
 c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, name TEXT, department TEXT, status TEXT)')
 c.execute('''CREATE TABLE IF NOT EXISTS org_chart_v2
              (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, affiliation TEXT, name TEXT,
-              contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
+             contact TEXT, category TEXT, purpose TEXT, position TEXT, manager TEXT)''')
 c.execute('CREATE TABLE IF NOT EXISTS country_info (country_name TEXT PRIMARY KEY, features TEXT, treaty TEXT, contacts TEXT, tips TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS file_archive (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, filepath TEXT, upload_date TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS qna (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT, question TEXT, date TEXT)')
@@ -216,7 +216,6 @@ if choice == "로그아웃":
 # --- 7. 로그인 전 화면 ---
 elif not st.session_state.get("logged_in"):
     
-    # 배경 및 CSS 적용
     if IMAGE_PATH.exists():
         img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
         st.markdown(f'<style>.stApp {{ background-image: linear-gradient(rgba(255,255,255,0.40), rgba(255,255,255,0.40)), url("data:image/png;base64,{img_base64}"); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; }}</style>', unsafe_allow_html=True)
@@ -314,16 +313,26 @@ elif not st.session_state.get("logged_in"):
 
 # --- 8. 로그인 후 메인 화면 ---
 else:
-    # 로그인 후 전용 공통 CSS (네비게이션 포함)
-    nav_img_css = ""
-    button_text_css = "color: transparent !important; font-size: 0px !important;" 
-    if NAV_IMAGE_PATH.exists():
-        nav_img_base64 = get_base64_of_bin_file(str(NAV_IMAGE_PATH))
-        nav_img_css = f'background-image: url("data:image/png;base64,{nav_img_base64}"); background-size: 100% 100%; background-position: center bottom; background-repeat: no-repeat;'
-    else:
-        nav_img_css = "background-color: #f4f8fe; border-top: 1px solid #d1e1f0;" 
-        button_text_css = "color: #002D56 !important; font-weight: bold; font-size: 14px !important;" 
+    # 🌟 사이드바 네비게이션 메뉴 🌟
+    with st.sidebar:
+        st.markdown(f"### 🕵️ 인터폴팀 시스템\n**{escape_text(st.session_state['user_name'])}** 수사관님")
+        st.divider()
+        if st.button("🏠 홈", use_container_width=True): st.session_state.nav_menu = "홈"; st.rerun()
+        if st.button("📊 연락망", use_container_width=True): st.session_state.nav_menu = "연락망"; st.rerun()
+        if st.button("🌍 국가별 공조 특징", use_container_width=True): st.session_state.nav_menu = "국가별지원"; st.rerun()
+        if st.button("📁 팀 공용 자료실", use_container_width=True): st.session_state.nav_menu = "자료실"; st.rerun()
+        if st.button("💬 Q&A 게시판", use_container_width=True): st.session_state.nav_menu = "Q&A"; st.rerun()
+        
+        if is_admin():
+            st.divider()
+            if st.button("⚙️ 데이터 관리", use_container_width=True): st.session_state.nav_menu = "데이터 관리"; st.rerun()
+            
+        st.divider()
+        if st.button("⚙️ 개인설정", use_container_width=True): st.session_state.nav_menu = "설정"; st.rerun()
+        if st.button("🚪 로그아웃", use_container_width=True): st.session_state.nav_menu = "로그아웃"; st.rerun()
 
+
+    # 메인 화면 CSS 및 배경
     if IMAGE_PATH.exists():
         img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
         st.markdown(f'<style>.stApp {{ background-image: linear-gradient(rgba(255,255,255,0.40), rgba(255,255,255,0.40)), url("data:image/png;base64,{img_base64}"); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; }}</style>', unsafe_allow_html=True)
@@ -342,70 +351,12 @@ else:
         .status-open {{ background: rgba(255, 193, 7, 0.16); color: #8A5A00; border: 1px solid rgba(255, 193, 7, 0.35); }}
         .status-done {{ background: rgba(40, 167, 69, 0.14); color: #1D6A33; border: 1px solid rgba(40, 167, 69, 0.28); }}
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
-        
-        .block-container {{ padding-bottom: 120px !important; }}
-        
-        /* 🌟 정확히 5칸을 가진 구역만 네비게이션으로 인식하여 하단에 고정 */
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) {{
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            position: fixed !important;
-            bottom: 0px !important;
-            left: 0px !important;
-            width: 100vw !important;
-            height: 85px !important;
-            {nav_img_css}
-            z-index: 999999 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            gap: 0px !important;
-        }}
-        
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) > div[data-testid="column"] {{
-            width: 20vw !important;
-            min-width: 20vw !important;
-            max-width: 20vw !important;
-            flex: 0 0 20vw !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            height: 100% !important;
-            display: flex;
-            align-items: stretch;
-            justify-content: center;
-        }}
-
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) div.stButton {{ width: 100% !important; height: 100% !important; padding: 0 !important; margin: 0 !important; }}
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button {{
-            background-color: transparent !important;
-            border: none !important;
-            width: 100% !important;
-            height: 100% !important; 
-            min-height: 85px !important;
-            box-shadow: none !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            border-radius: 0 !important;
-            {button_text_css}
-        }}
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button * {{ {button_text_css} }}
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(5):last-child) button:active {{ background-color: rgba(0, 0, 0, 0.1) !important; }}
     </style>
     """, unsafe_allow_html=True)
 
     # 🌟 1) 홈 화면
     if choice == "홈":
-        t_col1, t_col2, t_col3 = st.columns([7, 1.5, 1.5])
-        with t_col2:
-            if st.button("⚙️ 설정", use_container_width=True, key="top_setting"):
-                st.session_state.nav_menu = "설정"
-                st.rerun()
-        with t_col3:
-            if st.button("🚪 로그아웃", use_container_width=True, key="top_logout"):
-                st.session_state.nav_menu = "로그아웃"
-                st.rerun()
-
-        st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {escape_text(st.session_state["user_name"])} 수사관님!</h2><p>원하시는 메뉴를 선택하세요.</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="glass-box"><h2>👋 환영합니다, {escape_text(st.session_state["user_name"])} 수사관님!</h2><p>좌측 사이드바 메뉴를 선택하여 이동하세요.</p></div>', unsafe_allow_html=True)
 
         stat1, stat2, stat3, stat4 = st.columns(4)
         c.execute("SELECT COUNT(*) AS cnt FROM org_chart_v2")
@@ -432,12 +383,6 @@ else:
         if col4.button("💬 Q&A", use_container_width=True, key="h4"):
             st.session_state.nav_menu = "Q&A"
             st.rerun()
-
-        if is_admin():
-            st.markdown("<hr>", unsafe_allow_html=True)
-            if st.button("⚙️ 데이터 관리 (관리자용)", use_container_width=True):
-                st.session_state.nav_menu = "데이터 관리"
-                st.rerun()
 
     # 🌟 2) 설정 화면 (개인정보 수정)
     elif choice == "설정":
@@ -489,23 +434,14 @@ else:
 
     # 🌟 3) 연락망 화면
     elif choice == "연락망":
-        st.markdown('<div class="glass-box"><h2>📊 연락망 및 대시보드</h2></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-box"><h2>📊 연락망</h2></div>', unsafe_allow_html=True)
 
-        countries = ["전체"] + fetch_distinct_values("org_chart_v2", "country")
-        categories = ["전체"] + fetch_distinct_values("org_chart_v2", "category")
-        managers = ["전체"] + fetch_distinct_values("org_chart_v2", "manager")
-
-        fcol1, fcol2, fcol3 = st.columns(3)
-        with fcol1: search = st.text_input("통합 검색", placeholder="검색어", key="contact_search")
-        with fcol2: affiliation_kw = st.text_input("소속 검색", placeholder="예: 인터폴", key="contact_affil")
-        with fcol3:
-            if st.button("필터 초기화", use_container_width=True):
-                st.rerun()
-
-        fcol4, fcol5, fcol6 = st.columns(3)
-        with fcol4: selected_country = st.selectbox("국가", countries)
-        with fcol5: selected_category = st.selectbox("구분", categories)
-        with fcol6: selected_manager = st.selectbox("관리주체", managers)
+        # 복잡한 필터 제거 후 '통합 검색' 및 '검색' 버튼만 남김
+        fcol1, fcol2 = st.columns([4, 1])
+        with fcol1:
+            search = st.text_input("통합 검색", placeholder="검색어를 입력하세요", key="contact_search", label_visibility="collapsed")
+        with fcol2:
+            st.button("검색", use_container_width=True)
 
         base_query = "SELECT id as 연번, country as 국가, affiliation as 소속, name as 성명, contact as 연락처, category as 구분, purpose as 관리목적, position as 직책, manager as 관리주체 FROM org_chart_v2"
         where_clauses, params = [], []
@@ -514,27 +450,13 @@ else:
             like_v = build_like_pattern(search)
             where_clauses.append("(country LIKE ? OR name LIKE ? OR affiliation LIKE ? OR contact LIKE ? OR category LIKE ? OR purpose LIKE ? OR position LIKE ? OR manager LIKE ?)")
             params.extend([like_v] * 8)
-        if affiliation_kw.strip():
-            where_clauses.append("affiliation LIKE ?")
-            params.append(build_like_pattern(affiliation_kw))
-        if selected_country != "전체":
-            where_clauses.append("country = ?")
-            params.append(selected_country)
-        if selected_category != "전체":
-            where_clauses.append("category = ?")
-            params.append(selected_category)
-        if selected_manager != "전체":
-            where_clauses.append("manager = ?")
-            params.append(selected_manager)
 
         if where_clauses: base_query += " WHERE " + " AND ".join(where_clauses)
         base_query += " ORDER BY country ASC, affiliation ASC, name ASC"
 
         df = pd.read_sql_query(base_query, conn, params=params)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("검색 결과", len(df))
-        m2.metric("국가 수", int(df["국가"].nunique()) if not df.empty else 0)
-        m3.metric("관리주체 수", int(df["관리주체"].nunique()) if not df.empty else 0)
+        
+        # 메트릭스(검색 결과 수 등) 제거하고 바로 데이터프레임 표시
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         if not df.empty:
@@ -686,7 +608,10 @@ else:
 
     # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
-        require_admin_route()
+        if not is_admin():
+            st.error("관리자만 접근할 수 있습니다.")
+            st.stop()
+            
         tab1, tab2, tab3, tab4 = st.tabs(["👤 연락망", "🌍 국가정보", "👥 사용자", "🕘 로그"])
 
         with tab1:
@@ -741,12 +666,4 @@ else:
             if log_rows:
                 df_logs = pd.DataFrame(log_rows, columns=["시각", "사용자", "동작", "상세"])
                 st.dataframe(df_logs, use_container_width=True, hide_index=True)
-
-    # ----------------- [하단 네비게이션 바 고정 (SPA 전환 유지)] -----------------
-    nav1, nav2, nav3, nav4, nav5 = st.columns(5)
-    if nav1.button("연락망", use_container_width=True, key="b1"): st.session_state.nav_menu = "연락망"; st.rerun()
-    if nav2.button("국가별지원", use_container_width=True, key="b2"): st.session_state.nav_menu = "국가별지원"; st.rerun()
-    if nav3.button("홈", use_container_width=True, key="b3"): st.session_state.nav_menu = "홈"; st.rerun()
-    if nav4.button("자료실", use_container_width=True, key="b4"): st.session_state.nav_menu = "자료실"; st.rerun()
-    if nav5.button("Q&A", use_container_width=True, key="b5"): st.session_state.nav_menu = "Q&A"; st.rerun()
-    
+                
