@@ -571,10 +571,8 @@ else:
     elif choice == "지식네트워크":
         st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크</h2><p>구글 드라이브와 연동되어 팀원 누구나 실시간으로 옵시디언 자료를 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
-        # 🚨 중요: 아래 변수에 본인의 구글 드라이브 'Interpol(Seoul)' 폴더 ID를 적으세요!
-        # 폴더 ID는 구글 드라이브 웹에서 해당 폴더를 열었을 때 인터넷 주소창의 가장 뒷부분입니다.
-        # 예: https://drive.google.com/drive/folders/1A2b3C4d5E6f7G8h9I0j
-        FOLDER_ID = "https://drive.google.com/drive/folders/1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
+        # 🚨 전체 주소가 아닌 정확한 ID만 할당했습니다.
+        FOLDER_ID = "1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
 
         # 드라이브에서 마크다운(.md) 파일 목록 가져오기
         def get_markdown_files(folder_id):
@@ -595,31 +593,29 @@ else:
             except Exception as e:
                 return f"파일을 읽어오는 중 오류가 발생했습니다: {e}"
 
-        if FOLDER_ID == "https://drive.google.com/drive/folders/1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM":
-            st.warning("⚠️ 개발자 안내: 코드 내에 구글 드라이브 폴더 ID를 먼저 입력해주세요.")
-        else:
-            files = get_markdown_files(FOLDER_ID)
+        # 불필요한 if 경고문을 제거하고 바로 파일을 불러옵니다.
+        files = get_markdown_files(FOLDER_ID)
 
-            if files:
-                # 파일 확장자(.md)를 떼고 깔끔한 이름으로 리스트 생성
-                file_names = [f['name'].replace('.md', '') for f in files]
+        if files:
+            # 파일 확장자(.md)를 떼고 깔끔한 이름으로 리스트 생성
+            file_names = [f['name'].replace('.md', '') for f in files]
+            
+            # 사용자가 읽을 문서를 선택할 수 있는 박스
+            selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+
+            if selected_name != "--- 문서를 선택하세요 ---":
+                # 선택한 파일의 실제 ID를 찾아서 내용을 불러옴
+                selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
                 
-                # 사용자가 읽을 문서를 선택할 수 있는 박스
-                selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+                with st.spinner('문서를 불러오는 중입니다...'):
+                    content = read_file_content(selected_file['id'])
 
-                if selected_name != "--- 문서를 선택하세요 ---":
-                    # 선택한 파일의 실제 ID를 찾아서 내용을 불러옴
-                    selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
-                    
-                    with st.spinner('문서를 불러오는 중입니다...'):
-                        content = read_file_content(selected_file['id'])
-
-                    # 내용을 화면에 출력
-                    st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
-                    st.markdown(content) # 옵시디언의 마크다운 문법을 화면에 예쁘게 그려줍니다.
-                    st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.info("해당 구글 드라이브 폴더에 작성된 마크다운(.md) 파일이 없습니다. (서비스 계정에 폴더가 공유되었는지 확인해주세요)")
+                # 내용을 화면에 출력
+                st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
+                st.markdown(content) # 옵시디언의 마크다운 문법을 화면에 예쁘게 그려줍니다.
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("해당 구글 드라이브 폴더에 작성된 마크다운(.md) 파일이 없습니다. (서비스 계정에 폴더가 공유되었는지 확인해주세요)")
 
     # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
