@@ -1,7 +1,9 @@
 import streamlit as st
 import json 
+import re  # 텍스트에서 [[링크]]를 찾기 위한 모듈
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from streamlit_agraph import agraph, Node, Edge, Config # 그래프 뷰 라이브러리
 
 # Secrets에 저장된 텍스트 블록을 파이썬이 이해할 수 있게(JSON) 변환해서 읽기
 key_dict = json.loads(st.secrets["gcp_service_account"])
@@ -10,7 +12,8 @@ creds = service_account.Credentials.from_service_account_info(key_dict)
 # 구글 드라이브 연결
 service = build('drive', 'v3', credentials=creds)
 
-# --- (이 아래로는 기존에 작업하시던 파일 읽어오기 코드 등을 그대로 쓰시면 됩니다) ---
+import sqlite3
+# ... (이후 import pandas as pd 부터는 기존 코드 그대로 유지) ...
 import sqlite3
 import pandas as pd
 import os
@@ -593,27 +596,64 @@ else:
             except Exception as e:
                 return f"파일을 읽어오는 중 오류가 발생했습니다: {e}"
 
-        # 불필요한 if 경고문을 제거하고 바로 파일을 불러옵니다.
+        # 💡 [그래프 뷰 생성 함수 추가]
+        @st.cache_data(ttl=600)
+        def create_graph_view(_files_list):
+            nodes = []
+            edges = []
+            node_names = set()
+            
+            for file in _files_list:
+                source_name = file['name'].replace('.md', '')
+                node_names.add(source_name)
+                
+                content = read_file_content(file['id']) 
+                links = re.findall(r'\[\[(.*?)\]\]', content)
+                
+                for link in links:
+                    target_name = link.split('|')[0]
+                    node_names.add(target_name)
+                    edges.append(Edge(source=source_name, target=target_name, color="#87CEEB"))
+
+            for name in node_names:
+                nodes.append(Node(id=name, label=name, size=25, color="#1E90FF"))
+
+            config = Config(width="100%", height=500, directed=True, physics=True, hierarchical=False)
+            return nodes, edges, config
+
+        # 파일 불러오기 실행
         files = get_markdown_files(FOLDER_ID)
 
         if files:
-            # 파일 확장자(.md)를 떼고 깔끔한 이름으로 리스트 생성
-            file_names = [f['name'].replace('.md', '') for f in files]
-            
-            # 사용자가 읽을 문서를 선택할 수 있는 박스
-            selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+            # 💡 [탭 UI 적용] 화면을 두 개로 나눕니다
+            tab1, tab2 = st.tabs(["📄 개별 문서 읽기", "🕸️ 전체 지식 그래프"])
 
-            if selected_name != "--- 문서를 선택하세요 ---":
-                # 선택한 파일의 실제 ID를 찾아서 내용을 불러옴
-                selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
+            # 첫 번째 탭: 기존의 문서 읽기 기능
+            with tab1:
+                file_names = [f['name'].replace('.md', '') for f in files]
+                selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+
+                if selected_name != "--- 문서를 선택하세요 ---":
+                    selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
+                    
+                    with st.spinner('문서를 불러오는 중입니다...'):
+                        content = read_file_content(selected_file['id'])
+
+                    st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
+                    st.markdown(content)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # 두 번째 탭: 옵시디언 그래프 뷰 기능
+            with tab2:
+                st.info("문서 간의 연결( [[링크]] ) 상태를 보여줍니다. 마우스로 동그라미를 드래그하거나 휠로 확대/축소해 보세요!")
                 
-                with st.spinner('문서를 불러오는 중입니다...'):
-                    content = read_file_content(selected_file['id'])
-
-                # 내용을 화면에 출력
-                st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
-                st.markdown(content) # 옵시디언의 마크다운 문법을 화면에 예쁘게 그려줍니다.
-                st.markdown('</div>', unsafe_allow_html=True)
+                with st.spinner('문서 간의 연결 고리를 분석하고 있습니다... (최초 1회 로딩 시 약간의 시간이 소요됩니다)'):
+                    nodes, edges, config = create_graph_view(files)
+                    
+                    if len(nodes) > 0:
+                        agraph(nodes=nodes, edges=edges, config=config)
+                    else:
+                        st.write("아직 문서 간에 연결된 링크가 없습니다. 옵시디언에서 [[링크]]를 추가해 보세요.")
         else:
             st.info("해당 구글 드라이브 폴더에 작성된 마크다운(.md) 파일이 없습니다. (서비스 계정에 폴더가 공유되었는지 확인해주세요)")
 
