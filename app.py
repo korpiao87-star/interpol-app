@@ -14,8 +14,6 @@ creds = service_account.Credentials.from_service_account_info(key_dict)
 service = build('drive', 'v3', credentials=creds)
 
 import sqlite3
-# ... (이후 import pandas as pd 부터는 기존 코드 그대로 유지) ...
-import sqlite3
 import pandas as pd
 import os
 import base64
@@ -647,12 +645,25 @@ else:
                 st.subheader("🕵️‍♂️ 자료 기반 AI 수사관")
                 st.info("현재 옵시디언에 등록된 모든 수사 자료를 바탕으로 질문에 답변합니다.")
                 
-                # Gemini AI 초기 세팅
+# Gemini AI 초기 세팅 및 자동 모델 탐색
                 try:
                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                    model = genai.GenerativeModel('gemini-pro')
+                    
+                    # 1. 내 API 키로 글씨를 쓸 수 있는(generateContent) 모델만 골라내기
+                    valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    
+                    # 2. 화면에 쓸 수 있는 모델 목록 띄워보기 (디버깅용)
+                    st.info(f"💡 현재 접속 가능한 AI 모델: {valid_models}")
+                    
+                    # 3. 목록에 있는 첫 번째 모델을 자동으로 무조건 선택
+                    if valid_models:
+                        # 주로 'models/gemini-1.5-flash' 또는 'models/gemini-1.0-pro'가 자동 선택됩니다.
+                        model = genai.GenerativeModel(valid_models[0])
+                    else:
+                        st.error("사용 가능한 AI 모델이 없습니다. API 키를 확인해주세요.")
+                        
                 except Exception as e:
-                    st.error("AI 설정 오류. Secrets에 GEMINI_API_KEY가 있는지 확인하세요.")
+                    st.error(f"AI 설정 오류 상세: {e}")
 
                 # 채팅 기록 저장용
                 if "chat_history" not in st.session_state:
