@@ -246,30 +246,43 @@ elif not st.session_state.get("logged_in"):
         .answer-card {{ background: rgba(232,244,255,0.96); border: 1px solid rgba(0,82,155,0.25); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
 
-        /* 🤖 [핵심] AI 채팅창 가시성 강화 (어두운 배경 + 밝은 글씨) */
-        /* 어플 배경이 밝으므로 답변 박스를 어둡게 하여 대비를 높입니다. */
-        div[data-testid="stChatMessage"] {{
-            background-color: rgba(20, 30, 45, 0.85) !important; /* 짙은 네이비/블랙 반투명 배경 */
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        /* ---------------------------------------------------- */
+        /* 🔥 채팅창 완벽 분리 디자인 (질문 vs 답변) 🔥 */
+        /* ---------------------------------------------------- */
+
+        /* 🗣️ 1. 사용자 질문 박스 (홀수 번째) - 밝은 배경 & 어두운 글씨 */
+        div[data-testid="stChatMessage"]:nth-of-type(odd) {{
+            background-color: rgba(240, 248, 255, 0.95) !important; /* 아주 연한 파란색 배경 */
+            border: 1px solid rgba(0, 82, 155, 0.2) !important;
+            border-radius: 15px !important;
+            padding: 15px !important;
+            margin-bottom: 10px !important;
+        }}
+        div[data-testid="stChatMessage"]:nth-of-type(odd) * {{
+            color: #002D56 !important; /* 진한 네이비색 글씨 */
         }}
 
-        /* 답변 텍스트를 흰색으로 강제 고정 */
-        div[data-testid="stChatMessageContent"] p, 
-        div[data-testid="stChatMessageContent"] li, 
-        div[data-testid="stChatMessageContent"] span {{
-            color: #FFFFFF !important;
-            line-height: 1.6;
-            font-weight: 400;
+        /* 🤖 2. AI 수사관 답변 박스 (짝수 번째) - 짙은 어두운 배경 & 흰색 글씨 */
+        div[data-testid="stChatMessage"]:nth-of-type(even) {{
+            background-color: #111827 !important; /* 아주 짙은 블랙/네이비 (거의 검정) */
+            border: 1px solid #374151 !important;
+            border-radius: 15px !important;
+            padding: 20px !important;
+            margin-bottom: 15px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; /* 그림자 효과로 입체감 부여 */
         }}
-
-        /* 코드 블록이나 강조 텍스트 색상 조절 */
-        code {{
-            color: #FFD700 !important; /* 노란색 계열로 코드 강조 */
+        div[data-testid="stChatMessage"]:nth-of-type(even) * {{
+            color: #F9FAFB !important; /* 완벽한 흰색 글씨로 강제 고정 */
+            line-height: 1.7 !important; /* 글씨 간격을 살짝 넓혀 가독성 증가 */
+            font-size: 1.05em !important;
+        }}
+        
+        /* AI 답변 내의 코드나 강조 부분(노란색 계열) */
+        div[data-testid="stChatMessage"]:nth-of-type(even) code {{
+            color: #FFD700 !important;
             background-color: rgba(255, 255, 255, 0.1) !important;
+            padding: 2px 6px;
+            border-radius: 4px;
         }}
     </style>
     """, unsafe_allow_html=True)
