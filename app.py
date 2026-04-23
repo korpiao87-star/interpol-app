@@ -247,43 +247,33 @@ elif not st.session_state.get("logged_in"):
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
 
         /* ---------------------------------------------------- */
-        /* 🤖 AI 수사관 '답변' 구역 전용 박스 디자인 (강제 적용) */
+        /* 🔥 100% 확실한 마커(Marker) 추적식 박스 디자인 🔥 */
         /* ---------------------------------------------------- */
         
-        /* 1. AI(assistant) 답변 박스 - 아주 어두운 배경에 흰색 글씨 */
-        div[data-testid="stChatMessage"][aria-label="chat message from assistant"] {{
+        /* 1. 🤖 AI 답변 박스 (ai-marker 스티커가 붙은 상자) */
+        div[data-testid="stChatMessage"]:has(.ai-marker) {{
             background-color: #0F172A !important; /* 칠흑 같은 남색 바탕 */
-            border: 1.5px solid #334155 !important; /* 테두리 선 명확히 */
+            border: 1.5px solid #334155 !important;
             border-radius: 15px !important;
             padding: 20px !important;
             margin-bottom: 15px !important;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.4) !important; /* 입체감 있는 그림자 */
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important;
         }}
-        
-        /* AI 답변 텍스트 색상 강제 고정 */
-        div[data-testid="stChatMessage"][aria-label="chat message from assistant"] div[data-testid="stChatMessageContent"] * {{
-            color: #FFFFFF !important; /* 무조건 순백색 */
+        div[data-testid="stChatMessage"]:has(.ai-marker) * {{
+            color: #FFFFFF !important; /* 무조건 흰색 글씨 */
             line-height: 1.7 !important;
-            font-size: 1.05em !important;
         }}
 
-        /* 👤 2. 수사관(user) 질문 박스 - 짙은 파란색 배경 */
-        div[data-testid="stChatMessage"][aria-label="chat message from user"] {{
-            background-color: #1E3A8A !important; /* 경찰 제복 느낌의 짙은 파란색 */
+        /* 2. 👤 사용자 질문 박스 (user-marker 스티커가 붙은 상자) */
+        div[data-testid="stChatMessage"]:has(.user-marker) {{
+            background-color: #1E3A8A !important; /* 제복 느낌의 짙은 파란색 바탕 */
             border: 1px solid #2563EB !important;
             border-radius: 15px !important;
             padding: 15px !important;
             margin-bottom: 10px !important;
         }}
-        
-        /* 질문 텍스트 색상 고정 */
-        div[data-testid="stChatMessage"][aria-label="chat message from user"] div[data-testid="stChatMessageContent"] * {{
-            color: #E0F2FE !important; /* 아주 연한 하늘색 글씨 */
-        }}
-
-        /* 공통: 아이콘 부분 배경 제거 (박스 안쪽으로 자연스럽게 합치기) */
-        div[data-testid="stChatMessageAvatar"] {{
-            background-color: transparent !important;
+        div[data-testid="stChatMessage"]:has(.user-marker) * {{
+            color: #E0F2FE !important; /* 연한 하늘색 글씨 */
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -702,15 +692,22 @@ else:
                 # 이전 채팅 기록 화면에 표시
                 for msg in st.session_state.chat_history:
                     with st.chat_message(msg["role"]):
+                        # 💡 핵심: 글씨를 쓰기 전에 투명 스티커(마커)를 먼저 붙입니다!
+                        if msg["role"] == "assistant":
+                            st.markdown('<span class="ai-marker"></span>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<span class="user-marker"></span>', unsafe_allow_html=True)
                         st.markdown(msg["content"])
 
                 # 채팅 입력창
                 if prompt := st.chat_input("예: 캄보디아로 도피한 총책 공조 요청 절차와 연락처를 알려줘"):
                     st.session_state.chat_history.append({"role": "user", "content": prompt})
                     with st.chat_message("user"):
+                        # 💡 사용자 질문에도 스티커 붙이기
+                        st.markdown('<span class="user-marker"></span>', unsafe_allow_html=True)
                         st.markdown(prompt)
 
-# AI 답변 생성
+                    # AI 답변 생성
                     with st.chat_message("assistant"):
                         with st.spinner("모든 시스템 자료(옵시디언, 연락망, 국가정보, 자료실)를 통합 분석 중입니다..."):
                             # 1. 모든 소스에서 데이터 수집
@@ -739,10 +736,13 @@ else:
                             try:
                                 full_query = f"{system_prompt}\n\n수사관의 질문: {prompt}"
                                 response = model.generate_content(full_query)
+                                
+                                # 💡 AI 답변 출력 전에도 스티커 붙이기
+                                st.markdown('<span class="ai-marker"></span>', unsafe_allow_html=True)
                                 st.markdown(response.text)
+                                
                                 st.session_state.chat_history.append({"role": "assistant", "content": response.text})
                             except Exception as e:
-                                # ... (기존 에러 처리 코드) ...
                                 st.error(f"AI 응답 중 오류가 발생했습니다: {e}")
 
             # 💡 [개별 문서 읽기 탭이 두 번째로 옴]
