@@ -236,29 +236,40 @@ elif not st.session_state.get("logged_in"):
     
     st.markdown(f"""
     <style>
+        /* 기본 버튼 및 박스 디자인 */
         .stButton>button, .stFormSubmitButton>button {{ background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }}
         .glass-box {{ background-color: rgba(255, 255, 255, 0.88); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }}
         .glass-box h4 {{ color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }}
         
+        /* 카드 및 레이아웃 디자인 */
         .contact-card, .file-card, .comment-card {{ background: rgba(255,255,255,0.92); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
         .answer-card {{ background: rgba(232,244,255,0.96); border: 1px solid rgba(0,82,155,0.25); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
-        .contact-meta, .file-meta, .comment-meta {{ color: #55616F; font-size: 0.9rem; margin-bottom: 6px; }}
-        .question-wrap {{ background-color: rgba(255,255,255,0.90); border-radius: 16px; border: 1px solid rgba(0,45,86,0.10); padding: 16px; margin-bottom: 18px; }}
-        .status-pill {{ display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; margin-left: 8px; }}
-        .status-open {{ background: rgba(255, 193, 7, 0.16); color: #8A5A00; border: 1px solid rgba(255, 193, 7, 0.35); }}
-        .status-done {{ background: rgba(40, 167, 69, 0.14); color: #1D6A33; border: 1px solid rgba(40, 167, 69, 0.28); }}
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
 
-        /* 🤖 AI 채팅창 디자인 강제 고정 (다크모드 충돌 방지) */
-        .stChatMessage {{
-            background-color: rgba(255, 255, 255, 0.95) !important;
-            border: 1px solid rgba(0, 45, 86, 0.15) !important;
+        /* 🤖 [핵심] AI 채팅창 가시성 강화 (어두운 배경 + 밝은 글씨) */
+        /* 어플 배경이 밝으므로 답변 박스를 어둡게 하여 대비를 높입니다. */
+        div[data-testid="stChatMessage"] {{
+            background-color: rgba(20, 30, 45, 0.85) !important; /* 짙은 네이비/블랙 반투명 배경 */
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
             border-radius: 15px;
             padding: 15px;
             margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         }}
-        div[data-testid="stChatMessageContent"] * {{
-            color: #111111 !important;
+
+        /* 답변 텍스트를 흰색으로 강제 고정 */
+        div[data-testid="stChatMessageContent"] p, 
+        div[data-testid="stChatMessageContent"] li, 
+        div[data-testid="stChatMessageContent"] span {{
+            color: #FFFFFF !important;
+            line-height: 1.6;
+            font-weight: 400;
+        }}
+
+        /* 코드 블록이나 강조 텍스트 색상 조절 */
+        code {{
+            color: #FFD700 !important; /* 노란색 계열로 코드 강조 */
+            background-color: rgba(255, 255, 255, 0.1) !important;
         }}
     </style>
     """, unsafe_allow_html=True)
