@@ -574,7 +574,33 @@ else:
         st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 & AI 수사관</h2><p>AI에게 질문을 하거나 구글 드라이브와 연동된 수사 자료를 직접 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
         FOLDER_ID = "1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
+# 💡 [추가] 연락망 정보를 텍스트로 변환
+        def get_db_contacts_context():
+            c.execute("SELECT * FROM org_chart_v2")
+            rows = c.fetchall()
+            text = "\n[내부 연락망 정보]\n"
+            for r in rows:
+                text += f"- 국가: {r['country']}, 소속: {r['affiliation']}, 성명: {r['name']}, 연락처: {r['contact']}, 역할: {r['position']}\n"
+            return text
 
+        # 💡 [추가] 국가별 공조 특징 정보를 텍스트로 변환
+        def get_db_country_context():
+            c.execute("SELECT * FROM country_info")
+            rows = c.fetchall()
+            text = "\n[국가별 공조 특이사항]\n"
+            for r in rows:
+                text += f"- 국가명: {r['country_name']}\n  * 특징: {r['features']}\n  * 연락처: {r['contacts']}\n  * 팁: {r['tips']}\n"
+            return text
+
+        # 💡 [추가] 자료실 파일 목록 정보 (파일 내용은 추출이 복잡하므로 목록 우선 제공)
+        def get_file_archive_context():
+            c.execute("SELECT filename, uploader, upload_date FROM file_archive")
+            rows = c.fetchall()
+            text = "\n[팀 공용 자료실 파일 목록]\n"
+            for r in rows:
+                text += f"- 파일명: {r['filename']} (업로더: {r['uploader']}, 날짜: {r['upload_date']})\n"
+            return text
+        
         def get_markdown_files(folder_id):
             try:
                 query = f"'{folder_id}' in parents and mimeType = 'text/markdown' and trashed = false"
@@ -638,19 +664,30 @@ else:
                     with st.chat_message("user"):
                         st.markdown(prompt)
 
-                    # AI 답변 생성
+# AI 답변 생성
                     with st.chat_message("assistant"):
-                        with st.spinner("옵시디언 자료를 꼼꼼히 분석하여 답변을 작성하고 있습니다..."):
-                            vault_context = get_all_vault_context(files)
+                        with st.spinner("모든 시스템 자료(옵시디언, 연락망, 국가정보, 자료실)를 통합 분석 중입니다..."):
+                            # 1. 모든 소스에서 데이터 수집
+                            obsidian_context = get_all_vault_context(files) # 구글 드라이브
+                            contacts_context = get_db_contacts_context()    # DB 연락망
+                            country_context = get_db_country_context()      # DB 국가정보
+                            archive_context = get_file_archive_context()    # DB 자료실 목록
                             
+                            # 2. 시스템 프롬프트 구성 (AI에게 모든 정보를 줌)
                             system_prompt = f"""
-                            당신은 대한민국 서울경찰청 인터폴팀을 지원하는 엘리트 AI 수사관입니다.
-                            반드시 아래에 제공된 [수사 자료]만을 바탕으로 사용자의 질문에 정확하고 전문적인 어조로 답변하세요.
-                            만약 제공된 자료에 없는 내용이라면, 절대로 지어내지 말고 "제공된 자료에서는 해당 정보를 찾을 수 없습니다."라고 명확히 답변하세요.
+                            당신은 서울경찰청 인터폴팀의 수사 지원 AI입니다.
+                            제공된 [통합 수사 자료]를 바탕으로 질문에 답변하세요.
                             
-                            [수사 자료 시작]
-                            {vault_context}
-                            [수사 자료 끝]
+                            [통합 수사 자료]
+                            {obsidian_context}
+                            {contacts_context}
+                            {country_context}
+                            {archive_context}
+                            
+                            지침:
+                            1. 연락처를 물어보면 [내부 연락망 정보]에서 찾으세요.
+                            2. 국가별 절차는 [국가별 공조 특이사항]과 [문서명: ...] 자료를 대조하여 답변하세요.
+                            3. 자료실에 관련 파일이 있다면 파일명을 언급하며 '팀 공용 자료실에서 확인 가능합니다'라고 안내하세요.
                             """
                             
                             try:
@@ -659,6 +696,7 @@ else:
                                 st.markdown(response.text)
                                 st.session_state.chat_history.append({"role": "assistant", "content": response.text})
                             except Exception as e:
+                                # ... (기존 에러 처리 코드) ...
                                 st.error(f"AI 응답 중 오류가 발생했습니다: {e}")
 
             # 💡 [개별 문서 읽기 탭이 두 번째로 옴]
