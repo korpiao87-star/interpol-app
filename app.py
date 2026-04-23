@@ -1,3 +1,4 @@
+import google.generativeai as genai
 import streamlit as st
 import json 
 import re  # 텍스트에서 [[링크]]를 찾기 위한 모듈
@@ -572,23 +573,19 @@ else:
 
 # 🌟 6) 지식 네트워크 (웹 뷰어로 변경)
     elif choice == "지식네트워크":
-        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크</h2><p>구글 드라이브와 연동되어 팀원 누구나 실시간으로 옵시디언 자료를 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 & AI 수사관</h2><p>구글 드라이브와 연동된 자료를 열람하거나, AI에게 자료 기반의 질문을 할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
-        # 🚨 전체 주소가 아닌 정확한 ID만 할당했습니다.
         FOLDER_ID = "1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
 
-        # 드라이브에서 마크다운(.md) 파일 목록 가져오기
         def get_markdown_files(folder_id):
             try:
-                # trashed = false 조건으로 휴지통에 있는 파일은 제외합니다.
                 query = f"'{folder_id}' in parents and mimeType = 'text/markdown' and trashed = false"
                 results = service.files().list(q=query, fields="files(id, name)").execute()
                 return results.get('files', [])
-            except Exception as e:
+            except Exception:
                 st.error("구글 드라이브 폴더를 찾을 수 없거나 권한이 없습니다.")
                 return []
 
-        # 특정 파일의 내용(텍스트) 가져오기
         def read_file_content(file_id):
             try:
                 content = service.files().get_media(fileId=file_id).execute()
@@ -596,67 +593,111 @@ else:
             except Exception as e:
                 return f"파일을 읽어오는 중 오류가 발생했습니다: {e}"
 
-        # 💡 [그래프 뷰 생성 함수 추가]
         @st.cache_data(ttl=600)
         def create_graph_view(_files_list):
-            nodes = []
-            edges = []
-            node_names = set()
-            
+            nodes, edges, node_names = [], [], set()
             for file in _files_list:
                 source_name = file['name'].replace('.md', '')
                 node_names.add(source_name)
-                
                 content = read_file_content(file['id']) 
                 links = re.findall(r'\[\[(.*?)\]\]', content)
-                
                 for link in links:
                     target_name = link.split('|')[0]
                     node_names.add(target_name)
                     edges.append(Edge(source=source_name, target=target_name, color="#87CEEB"))
-
-            for name in node_names:
-                nodes.append(Node(id=name, label=name, size=25, color="#1E90FF"))
-
+            for name in node_names: nodes.append(Node(id=name, label=name, size=25, color="#1E90FF"))
             config = Config(width="100%", height=500, directed=True, physics=True, hierarchical=False)
             return nodes, edges, config
 
-        # 파일 불러오기 실행
+        # 💡 [AI 전용] 모든 문서를 하나로 합치는 함수 (속도를 위해 1시간 동안 기억)
+        @st.cache_data(ttl=3600)
+        def get_all_vault_context(_files_list):
+            context_text = ""
+            for file in _files_list:
+                content = read_file_content(file['id'])
+                context_text += f"\n\n--- [문서명: {file['name']}] ---\n{content}"
+            return context_text
+
         files = get_markdown_files(FOLDER_ID)
 
         if files:
-            # 💡 [탭 UI 적용] 화면을 두 개로 나눕니다
-            tab1, tab2 = st.tabs(["📄 개별 문서 읽기", "🕸️ 전체 지식 그래프"])
+            # 💡 탭이 3개로 늘어납니다!
+            tab1, tab2, tab3 = st.tabs(["📄 개별 문서 읽기", "🕸️ 전체 지식 그래프", "🤖 AI 수사관 (Q&A)"])
 
-            # 첫 번째 탭: 기존의 문서 읽기 기능
             with tab1:
                 file_names = [f['name'].replace('.md', '') for f in files]
                 selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
-
                 if selected_name != "--- 문서를 선택하세요 ---":
                     selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
-                    
                     with st.spinner('문서를 불러오는 중입니다...'):
                         content = read_file_content(selected_file['id'])
-
                     st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
                     st.markdown(content)
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            # 두 번째 탭: 옵시디언 그래프 뷰 기능
             with tab2:
-                st.info("문서 간의 연결( [[링크]] ) 상태를 보여줍니다. 마우스로 동그라미를 드래그하거나 휠로 확대/축소해 보세요!")
-                
-                with st.spinner('문서 간의 연결 고리를 분석하고 있습니다... (최초 1회 로딩 시 약간의 시간이 소요됩니다)'):
+                st.info("문서 간의 연결( [[링크]] ) 상태를 보여줍니다.")
+                with st.spinner('문서 간의 연결 고리를 분석하고 있습니다...'):
                     nodes, edges, config = create_graph_view(files)
-                    
-                    if len(nodes) > 0:
-                        agraph(nodes=nodes, edges=edges, config=config)
-                    else:
-                        st.write("아직 문서 간에 연결된 링크가 없습니다. 옵시디언에서 [[링크]]를 추가해 보세요.")
-        else:
-            st.info("해당 구글 드라이브 폴더에 작성된 마크다운(.md) 파일이 없습니다. (서비스 계정에 폴더가 공유되었는지 확인해주세요)")
+                    if len(nodes) > 0: agraph(nodes=nodes, edges=edges, config=config)
+                    else: st.write("연결된 문서가 없습니다.")
 
+            # 💡 [새로 추가된 AI 수사관 탭]
+            with tab3:
+                st.subheader("🕵️‍♂️ 자료 기반 AI 수사관")
+                st.info("현재 옵시디언에 등록된 모든 수사 자료를 바탕으로 질문에 답변합니다.")
+                
+                # Gemini AI 초기 세팅
+                try:
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                except Exception as e:
+                    st.error("AI 설정 오류. Secrets에 GEMINI_API_KEY가 있는지 확인하세요.")
+
+                # 채팅 기록 저장용
+                if "chat_history" not in st.session_state:
+                    st.session_state.chat_history = []
+
+                # 이전 채팅 기록 화면에 표시
+                for msg in st.session_state.chat_history:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+                # 채팅 입력창
+                if prompt := st.chat_input("예: 캄보디아로 도피한 총책 공조 요청 절차와 연락처를 알려줘"):
+                    # 사용자 질문 출력
+                    st.session_state.chat_history.append({"role": "user", "content": prompt})
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
+
+                    # AI 답변 생성
+                    with st.chat_message("assistant"):
+                        with st.spinner("옵시디언 자료를 꼼꼼히 분석하여 답변을 작성하고 있습니다..."):
+                            # 1. 모든 문서 내용을 하나로 뭉치기
+                            vault_context = get_all_vault_context(files)
+                            
+                            # 2. AI에게 역할과 규칙 부여
+                            system_prompt = f"""
+                            당신은 대한민국 서울경찰청 인터폴팀을 지원하는 엘리트 AI 수사관입니다.
+                            반드시 아래에 제공된 [수사 자료]만을 바탕으로 사용자의 질문에 정확하고 전문적인 어조로 답변하세요.
+                            만약 제공된 자료에 없는 내용이라면, 절대로 지어내지 말고 "제공된 자료에서는 해당 정보를 찾을 수 없습니다."라고 명확히 답변하세요.
+                            
+                            [수사 자료 시작]
+                            {vault_context}
+                            [수사 자료 끝]
+                            """
+                            
+                            # 3. AI에게 질문 던지기
+                            try:
+                                full_query = f"{system_prompt}\n\n수사관의 질문: {prompt}"
+                                response = model.generate_content(full_query)
+                                st.markdown(response.text)
+                                st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                            except Exception as e:
+                                st.error(f"AI 응답 중 오류가 발생했습니다: {e}")
+        else:
+            st.info("해당 구글 드라이브 폴더에 작성된 파일이 없습니다.")
+            
     # 🌟 7) 데이터 관리 (관리자)
     elif choice == "데이터 관리":
         if not is_admin():
