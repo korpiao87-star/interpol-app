@@ -247,50 +247,52 @@ elif not st.session_state.get("logged_in"):
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
 
         /* ---------------------------------------------------- */
-        /* 🤖 채팅창 박스 100% 생성 전략 (순서가 중요합니다!) */
+        /* 💬 카카오톡 스타일 '말풍선 알맹이' 직접 칠하기 전략 */
         /* ---------------------------------------------------- */
         
-        /* 1단계: 기본 셋팅 - 모든 채팅 박스를 'AI 답변용' 짙은 남색으로 강제 생성합니다. */
-        /* (AI 이름표가 고장났어도 무조건 박스가 만들어집니다) */
+        /* 1. 스트림릿이 몰래 칠하는 겉포장 박스 색상을 완전히 투명하게 지웁니다. */
         div[data-testid="stChatMessage"] {{
-            background-color: #0F172A !important; /* 칠흑 같은 남색 바탕 */
-            border: 1.5px solid #334155 !important;
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }}
+
+        /* 2. 🤖 AI 답변 박스 (모든 말풍선의 '알맹이'를 짙은 남색으로 강제 칠함) */
+        /* 겉포장이 어찌되든 알맹이에 색을 칠하므로 100% 박스가 눈에 보입니다! */
+        div[data-testid="stChatMessageContent"] {{
+            background-color: #0F172A !important; 
+            border: 1px solid #334155 !important;
             border-radius: 15px !important;
-            padding: 20px !important;
-            margin-bottom: 15px !important;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.4) !important;
+            padding: 15px 20px !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
         }}
         
-        /* 모든 글씨는 선명한 흰색으로 기본 고정 */
-        div[data-testid="stChatMessage"] * {{
-            color: #FFFFFF !important; 
-            line-height: 1.7 !important;
+        /* 말풍선 안의 글씨는 모두 선명한 흰색으로 강제 고정 */
+        div[data-testid="stChatMessageContent"] * {{
+            color: #FFFFFF !important;
+            line-height: 1.6 !important;
             font-size: 1.05em !important;
         }}
 
-        /* 2단계: 예외 처리 - 반장님 환경에서 작동이 확인된 '수사관 질문'만 파란색으로 덮어씌웁니다. */
-        div[data-testid="stChatMessage"][aria-label="chat message from user"] {{
-            background-color: #1E3A8A !important; /* 경찰 제복 느낌의 짙은 파란색 */
+        /* 3. 👤 사용자 질문 박스만 찾아서 파란색으로 예쁘게 덮어쓰기 */
+        /* 핸드폰 언어 설정이 한글이든 영문이든 다 잡아내도록 설정했습니다. */
+        div[data-testid="stChatMessage"][aria-label*="user"] div[data-testid="stChatMessageContent"],
+        div[data-testid="stChatMessage"][aria-label*="사용자"] div[data-testid="stChatMessageContent"] {{
+            background-color: #1E3A8A !important;
             border: 1px solid #2563EB !important;
-            padding: 15px !important;
-            margin-bottom: 10px !important;
         }}
         
-        div[data-testid="stChatMessage"][aria-label="chat message from user"] * {{
-            color: #E0F2FE !important; /* 질문창 글씨는 연한 하늘색 */
-        }}
-
-        /* 공통: 아이콘 부분 배경은 투명하게 */
-        div[data-testid="stChatMessageAvatar"] {{
-            background-color: transparent !important;
+        div[data-testid="stChatMessage"][aria-label*="user"] div[data-testid="stChatMessageContent"] *,
+        div[data-testid="stChatMessage"][aria-label*="사용자"] div[data-testid="stChatMessageContent"] * {{
+            color: #E0F2FE !important; /* 하늘색 글씨 */
         }}
         
-        /* AI 코드/강조 블록 예쁘게 표시 */
-        div[data-testid="stChatMessage"] code {{
+        /* 코드 블록이나 핵심 강조 부분 (노란색) */
+        div[data-testid="stChatMessageContent"] code {{
             color: #FFD700 !important;
             background-color: rgba(255, 255, 255, 0.1) !important;
-            padding: 2px 5px;
-            border-radius: 5px;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
         }}
     </style>
     """, unsafe_allow_html=True)
