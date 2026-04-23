@@ -234,11 +234,32 @@ elif not st.session_state.get("logged_in"):
         img_base64 = get_base64_of_bin_file(str(IMAGE_PATH))
         st.markdown(f'<style>.stApp {{ background-image: linear-gradient(rgba(255,255,255,0.40), rgba(255,255,255,0.40)), url("data:image/png;base64,{img_base64}"); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; }}</style>', unsafe_allow_html=True)
     
-    st.markdown("""
+st.markdown(f"""
     <style>
-        .stButton>button, .stFormSubmitButton>button { background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }
-        .glass-box { background-color: rgba(255, 255, 255, 0.88); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }
-        .glass-box h4 { color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }
+        .stButton>button, .stFormSubmitButton>button {{ background-color: #00529B; color: white; border-radius: 10px; font-weight: bold; }}
+        .glass-box {{ background-color: rgba(255, 255, 255, 0.88); padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 20px; color: #222; }}
+        .glass-box h4 {{ color: #002D56; border-bottom: 2px solid #00529B; padding-bottom: 8px; }}
+        
+        .contact-card, .file-card, .comment-card {{ background: rgba(255,255,255,0.92); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
+        .answer-card {{ background: rgba(232,244,255,0.96); border: 1px solid rgba(0,82,155,0.25); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }}
+        .contact-meta, .file-meta, .comment-meta {{ color: #55616F; font-size: 0.9rem; margin-bottom: 6px; }}
+        .question-wrap {{ background-color: rgba(255,255,255,0.90); border-radius: 16px; border: 1px solid rgba(0,45,86,0.10); padding: 16px; margin-bottom: 18px; }}
+        .status-pill {{ display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; margin-left: 8px; }}
+        .status-open {{ background: rgba(255, 193, 7, 0.16); color: #8A5A00; border: 1px solid rgba(255, 193, 7, 0.35); }}
+        .status-done {{ background: rgba(40, 167, 69, 0.14); color: #1D6A33; border: 1px solid rgba(40, 167, 69, 0.28); }}
+        .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
+
+        /* 🤖 AI 채팅창 디자인 강제 고정 (다크모드 충돌 방지) */
+        .stChatMessage {{
+            background-color: rgba(255, 255, 255, 0.95) !important;
+            border: 1px solid rgba(0, 45, 86, 0.15) !important;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }}
+        div[data-testid="stChatMessageContent"] * {{
+            color: #111111 !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
