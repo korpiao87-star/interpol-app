@@ -569,9 +569,9 @@ else:
                         conn.commit()
                         st.rerun()
 
-# 🌟 6) 지식 네트워크 (웹 뷰어로 변경)
+# 🌟 6) 지식 네트워크 & AI 수사관
     elif choice == "지식네트워크":
-        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 & AI 수사관</h2><p>구글 드라이브와 연동된 자료를 열람하거나, AI에게 자료 기반의 질문을 할 수 있습니다.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-box"><h2>🧠 지식 네트워크 & AI 수사관</h2><p>AI에게 질문을 하거나 구글 드라이브와 연동된 수사 자료를 직접 열람할 수 있습니다.</p></div>', unsafe_allow_html=True)
         
         FOLDER_ID = "1WMAaxLQKmc8VyVLdqtygpPaM4dI-jOoM"
 
@@ -591,22 +591,6 @@ else:
             except Exception as e:
                 return f"파일을 읽어오는 중 오류가 발생했습니다: {e}"
 
-        @st.cache_data(ttl=600)
-        def create_graph_view(_files_list):
-            nodes, edges, node_names = [], [], set()
-            for file in _files_list:
-                source_name = file['name'].replace('.md', '')
-                node_names.add(source_name)
-                content = read_file_content(file['id']) 
-                links = re.findall(r'\[\[(.*?)\]\]', content)
-                for link in links:
-                    target_name = link.split('|')[0]
-                    node_names.add(target_name)
-                    edges.append(Edge(source=source_name, target=target_name, color="#87CEEB"))
-            for name in node_names: nodes.append(Node(id=name, label=name, size=25, color="#1E90FF"))
-            config = Config(width="100%", height=500, directed=True, physics=True, hierarchical=False)
-            return nodes, edges, config
-
         # 💡 [AI 전용] 모든 문서를 하나로 합치는 함수 (속도를 위해 1시간 동안 기억)
         @st.cache_data(ttl=3600)
         def get_all_vault_context(_files_list):
@@ -619,49 +603,23 @@ else:
         files = get_markdown_files(FOLDER_ID)
 
         if files:
-            # 💡 탭이 3개로 늘어납니다!
-            tab1, tab2, tab3 = st.tabs(["📄 개별 문서 읽기", "🕸️ 전체 지식 그래프", "🤖 AI 수사관 (Q&A)"])
+            # 💡 탭 순서 변경 및 그래프 뷰 삭제 (2개 탭으로 축소)
+            tab1, tab2 = st.tabs(["🤖 AI 수사관 (Q&A)", "📄 개별 문서 읽기"])
 
+            # 💡 [AI 수사관 탭이 첫 번째로 옴]
             with tab1:
-                file_names = [f['name'].replace('.md', '') for f in files]
-                selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
-                if selected_name != "--- 문서를 선택하세요 ---":
-                    selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
-                    with st.spinner('문서를 불러오는 중입니다...'):
-                        content = read_file_content(selected_file['id'])
-                    st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
-                    st.markdown(content)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-            with tab2:
-                st.info("문서 간의 연결( [[링크]] ) 상태를 보여줍니다.")
-                with st.spinner('문서 간의 연결 고리를 분석하고 있습니다...'):
-                    nodes, edges, config = create_graph_view(files)
-                    if len(nodes) > 0: agraph(nodes=nodes, edges=edges, config=config)
-                    else: st.write("연결된 문서가 없습니다.")
-
-            # 💡 [새로 추가된 AI 수사관 탭]
-            with tab3:
                 st.subheader("🕵️‍♂️ 자료 기반 AI 수사관")
                 st.info("현재 옵시디언에 등록된 모든 수사 자료를 바탕으로 질문에 답변합니다.")
                 
-# Gemini AI 초기 세팅 및 자동 모델 탐색
+                # Gemini AI 초기 세팅 (안내 메시지 가림 처리 완료)
                 try:
                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                    
-                    # 1. 내 API 키로 글씨를 쓸 수 있는(generateContent) 모델만 골라내기
                     valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                     
-                    # 2. 화면에 쓸 수 있는 모델 목록 띄워보기 (디버깅용)
-                    st.info(f"💡 현재 접속 가능한 AI 모델: {valid_models}")
-                    
-                    # 3. 목록에 있는 첫 번째 모델을 자동으로 무조건 선택
                     if valid_models:
-                        # 주로 'models/gemini-1.5-flash' 또는 'models/gemini-1.0-pro'가 자동 선택됩니다.
                         model = genai.GenerativeModel(valid_models[0])
                     else:
                         st.error("사용 가능한 AI 모델이 없습니다. API 키를 확인해주세요.")
-                        
                 except Exception as e:
                     st.error(f"AI 설정 오류 상세: {e}")
 
@@ -676,7 +634,6 @@ else:
 
                 # 채팅 입력창
                 if prompt := st.chat_input("예: 캄보디아로 도피한 총책 공조 요청 절차와 연락처를 알려줘"):
-                    # 사용자 질문 출력
                     st.session_state.chat_history.append({"role": "user", "content": prompt})
                     with st.chat_message("user"):
                         st.markdown(prompt)
@@ -684,10 +641,8 @@ else:
                     # AI 답변 생성
                     with st.chat_message("assistant"):
                         with st.spinner("옵시디언 자료를 꼼꼼히 분석하여 답변을 작성하고 있습니다..."):
-                            # 1. 모든 문서 내용을 하나로 뭉치기
                             vault_context = get_all_vault_context(files)
                             
-                            # 2. AI에게 역할과 규칙 부여
                             system_prompt = f"""
                             당신은 대한민국 서울경찰청 인터폴팀을 지원하는 엘리트 AI 수사관입니다.
                             반드시 아래에 제공된 [수사 자료]만을 바탕으로 사용자의 질문에 정확하고 전문적인 어조로 답변하세요.
@@ -698,7 +653,6 @@ else:
                             [수사 자료 끝]
                             """
                             
-                            # 3. AI에게 질문 던지기
                             try:
                                 full_query = f"{system_prompt}\n\n수사관의 질문: {prompt}"
                                 response = model.generate_content(full_query)
@@ -706,6 +660,18 @@ else:
                                 st.session_state.chat_history.append({"role": "assistant", "content": response.text})
                             except Exception as e:
                                 st.error(f"AI 응답 중 오류가 발생했습니다: {e}")
+
+            # 💡 [개별 문서 읽기 탭이 두 번째로 옴]
+            with tab2:
+                file_names = [f['name'].replace('.md', '') for f in files]
+                selected_name = st.selectbox("📂 열람할 수사 자료를 선택하세요", ["--- 문서를 선택하세요 ---"] + file_names)
+                if selected_name != "--- 문서를 선택하세요 ---":
+                    selected_file = next(f for f in files if f['name'].replace('.md', '') == selected_name)
+                    with st.spinner('문서를 불러오는 중입니다...'):
+                        content = read_file_content(selected_file['id'])
+                    st.markdown('<div class="preview-wrap">', unsafe_allow_html=True)
+                    st.markdown(content)
+                    st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("해당 구글 드라이브 폴더에 작성된 파일이 없습니다.")
             
