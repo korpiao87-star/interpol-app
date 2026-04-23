@@ -247,33 +247,50 @@ elif not st.session_state.get("logged_in"):
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
 
         /* ---------------------------------------------------- */
-        /* 🔥 100% 확실한 마커(Marker) 추적식 박스 디자인 🔥 */
+        /* 🤖 채팅창 박스 100% 생성 전략 (순서가 중요합니다!) */
         /* ---------------------------------------------------- */
         
-        /* 1. 🤖 AI 답변 박스 (ai-marker 스티커가 붙은 상자) */
-        div[data-testid="stChatMessage"]:has(.ai-marker) {{
+        /* 1단계: 기본 셋팅 - 모든 채팅 박스를 'AI 답변용' 짙은 남색으로 강제 생성합니다. */
+        /* (AI 이름표가 고장났어도 무조건 박스가 만들어집니다) */
+        div[data-testid="stChatMessage"] {{
             background-color: #0F172A !important; /* 칠흑 같은 남색 바탕 */
             border: 1.5px solid #334155 !important;
             border-radius: 15px !important;
             padding: 20px !important;
             margin-bottom: 15px !important;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4) !important;
         }}
-        div[data-testid="stChatMessage"]:has(.ai-marker) * {{
-            color: #FFFFFF !important; /* 무조건 흰색 글씨 */
+        
+        /* 모든 글씨는 선명한 흰색으로 기본 고정 */
+        div[data-testid="stChatMessage"] * {{
+            color: #FFFFFF !important; 
             line-height: 1.7 !important;
+            font-size: 1.05em !important;
         }}
 
-        /* 2. 👤 사용자 질문 박스 (user-marker 스티커가 붙은 상자) */
-        div[data-testid="stChatMessage"]:has(.user-marker) {{
-            background-color: #1E3A8A !important; /* 제복 느낌의 짙은 파란색 바탕 */
+        /* 2단계: 예외 처리 - 반장님 환경에서 작동이 확인된 '수사관 질문'만 파란색으로 덮어씌웁니다. */
+        div[data-testid="stChatMessage"][aria-label="chat message from user"] {{
+            background-color: #1E3A8A !important; /* 경찰 제복 느낌의 짙은 파란색 */
             border: 1px solid #2563EB !important;
-            border-radius: 15px !important;
             padding: 15px !important;
             margin-bottom: 10px !important;
         }}
-        div[data-testid="stChatMessage"]:has(.user-marker) * {{
-            color: #E0F2FE !important; /* 연한 하늘색 글씨 */
+        
+        div[data-testid="stChatMessage"][aria-label="chat message from user"] * {{
+            color: #E0F2FE !important; /* 질문창 글씨는 연한 하늘색 */
+        }}
+
+        /* 공통: 아이콘 부분 배경은 투명하게 */
+        div[data-testid="stChatMessageAvatar"] {{
+            background-color: transparent !important;
+        }}
+        
+        /* AI 코드/강조 블록 예쁘게 표시 */
+        div[data-testid="stChatMessage"] code {{
+            color: #FFD700 !important;
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            padding: 2px 5px;
+            border-radius: 5px;
         }}
     </style>
     """, unsafe_allow_html=True)
