@@ -650,7 +650,7 @@ else:
                 # Gemini AI 초기 세팅
                 try:
                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 except Exception as e:
                     st.error("AI 설정 오류. Secrets에 GEMINI_API_KEY가 있는지 확인하세요.")
 
