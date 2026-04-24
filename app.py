@@ -420,6 +420,61 @@ else:
         .status-open {{ background: rgba(255, 193, 7, 0.16); color: #8A5A00; border: 1px solid rgba(255, 193, 7, 0.35); }}
         .status-done {{ background: rgba(40, 167, 69, 0.14); color: #1D6A33; border: 1px solid rgba(40, 167, 69, 0.28); }}
         .preview-wrap {{ background: rgba(255,255,255,0.96); border: 1px solid rgba(0,45,86,0.10); border-radius: 14px; padding: 12px; margin-top: 10px; margin-bottom: 8px; }}
+
+        /* ============================= */
+        /* AI 수사관 채팅 말풍선 디자인 */
+        /* ============================= */
+        div[data-testid="stChatMessage"] {{
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 8px 0 !important;
+        }}
+
+        /* 기본 말풍선: AI 답변 */
+        div[data-testid="stChatMessageContent"] {{
+            background: rgba(15, 23, 42, 0.96) !important;
+            border: 1px solid rgba(148, 163, 184, 0.45) !important;
+            border-radius: 18px !important;
+            padding: 16px 20px !important;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28) !important;
+            max-width: 92% !important;
+        }}
+
+        /* AI 답변 글자 */
+        div[data-testid="stChatMessageContent"] * {{
+            color: #F8FAFC !important;
+            line-height: 1.75 !important;
+            font-size: 1.02rem !important;
+        }}
+
+        /* 사용자 질문 말풍선 */
+        div[data-testid="stChatMessage"][aria-label*="user"] div[data-testid="stChatMessageContent"],
+        div[data-testid="stChatMessage"][aria-label*="사용자"] div[data-testid="stChatMessageContent"] {{
+            background: rgba(30, 58, 138, 0.96) !important;
+            border: 1px solid rgba(96, 165, 250, 0.70) !important;
+            margin-left: auto !important;
+        }}
+
+        /* 사용자 질문 글자 */
+        div[data-testid="stChatMessage"][aria-label*="user"] div[data-testid="stChatMessageContent"] *,
+        div[data-testid="stChatMessage"][aria-label*="사용자"] div[data-testid="stChatMessageContent"] * {{
+            color: #EFF6FF !important;
+        }}
+
+        /* 코드/파일명 강조 */
+        div[data-testid="stChatMessageContent"] code {{
+            color: #FDE68A !important;
+            background-color: rgba(255, 255, 255, 0.12) !important;
+            padding: 2px 6px !important;
+            border-radius: 5px !important;
+        }}
+
+        /* 링크 색상 */
+        div[data-testid="stChatMessageContent"] a {{
+            color: #93C5FD !important;
+            font-weight: 700 !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
